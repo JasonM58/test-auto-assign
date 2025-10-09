@@ -279,7 +279,6 @@ func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics) error {
 }
 
 
-// --- Existing PR Report Card (renamed) ---
 func BuildPRReportCard(metrics *PRMetrics) map[string]interface{} {
 	return map[string]interface{}{
 		"config": map[string]interface{}{
@@ -334,7 +333,6 @@ func BuildPRReportCard(metrics *PRMetrics) map[string]interface{} {
 	}
 }
 
-// --- New Reminder Card ---
 func BuildReminderCard(createdBy string, reviewers []string, createdAt time.Time, prURL string, repoName string) map[string]interface{} {
 	reviewerList := "(no reviewers)"
 	if len(reviewers) > 0 {

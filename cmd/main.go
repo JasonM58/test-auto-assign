@@ -89,7 +89,6 @@ func main() {
 		allPRs := append(mergedPRs, openPRs...)
 
 		for _, pr := range allPRs {
-			// --- Detailed info to fetch reviewers ---
 			prDetail, _, err := client.PullRequests.Get(ctx, owner, repoName, pr.GetNumber())
 			if err != nil {
 				log.Printf("⚠️ Failed to fetch PR #%d details: %v", pr.GetNumber(), err)
