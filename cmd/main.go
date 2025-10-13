@@ -33,7 +33,7 @@ func main() {
 	auth := githubclient.GitHubAuth{
 		AppID: cfg.GetGithubAppId(),
 	}
-	privateKey, err := githubclient.LoadPrivateKey(cfg.GetGithubPrivateKeyPath())
+	privateKey, err := githubclient.LoadPrivateKey(cfg.GetGithubPrivateKey())
 	if err != nil {
 		log.Fatalf("❌ Failed to load private key: %v", err)
 	}
@@ -117,7 +117,7 @@ func main() {
 
 			if pr.GetClosedAt().IsZero() {
 					// Open PR → Reminder card
-					reminderCard := githubclient.BuildReminderCard(
+					reminderCard := lark.BuildReminderCard(
 							pr.GetUser().GetLogin(),
 							reviewers,
 							createdAt,
@@ -139,7 +139,7 @@ func main() {
 					githubclient.SendPRMetricsToOTel(ctx, metrics)
 
 					// Send report card
-					reportCard := githubclient.BuildPRReportCard(metrics)
+					reportCard := lark.BuildPRReportCard(metrics)
 					if err := lark.SendLarkCard(cfg.GetLarkSecret(), cfg.GetLarkWebhookURL(), reportCard); err != nil {
 							log.Printf("❌ Failed to send Lark report card for PR #%d: %v", pr.GetNumber(), err)
 					}
