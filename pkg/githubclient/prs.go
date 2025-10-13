@@ -12,97 +12,97 @@ import (
 )
 
 type PRMetrics struct {
-	Number              int
-	RepoName            string
-	Title               string
-	CreatedAt           time.Time
-	MergedAt            time.Time
-	TimeToFirstReview   time.Duration
-	TimeToApproval      time.Duration
-	TimeToMerge         time.Duration
-	TimeFromApprovalToMerge         time.Duration
-	ReviewIterations    int
-	SizeCategory string `json:"size_category"`
+	Number                  int
+	RepoName                string
+	Title                   string
+	CreatedAt               time.Time
+	MergedAt                time.Time
+	TimeToFirstReview       time.Duration
+	TimeToApproval          time.Duration
+	TimeToMerge             time.Duration
+	TimeFromApprovalToMerge time.Duration
+	ReviewIterations        int
+	SizeCategory            string `json:"size_category"`
 	PRUrl                   string `json:"pr_url"`
 	CreatedBy               string `json:"created_by"`
-	Additions     int
-	Deletions     int
-	ChangedFiles  int
-	LOCChanged               int
+	Additions               int
+	Deletions               int
+	ChangedFiles            int
+	LOCChanged              int
 }
 
 func GetPRMetrics(ctx context.Context, client *github.Client, owner, repo string, pr *github.PullRequest) (*PRMetrics, error) {
-    prNumber := pr.GetNumber()
-    createdAt := pr.GetCreatedAt()
-    mergedAt := pr.GetMergedAt()
+	prNumber := pr.GetNumber()
+	createdAt := pr.GetCreatedAt()
+	mergedAt := pr.GetMergedAt()
 
-    // Fetch all reviews
-    reviews, _, err := client.PullRequests.ListReviews(ctx, owner, repo, prNumber, nil)
-    if err != nil {
-        return nil, err
-    }
+	// Fetch all reviews
+	reviews, _, err := client.PullRequests.ListReviews(ctx, owner, repo, prNumber, nil)
+	if err != nil {
+		return nil, err
+	}
 
-    var (
-        firstReviewTime  *time.Time
-        approvalTime     *time.Time
-        reviewIterations int
-    )
+	var (
+		firstReviewTime  *time.Time
+		approvalTime     *time.Time
+		reviewIterations int
+	)
 
-    for _, review := range reviews {
-        submittedAt := review.SubmittedAt.Time
+	for _, review := range reviews {
+		submittedAt := review.SubmittedAt.Time
 
-        if review.GetState() == "COMMENTED" || review.GetState() == "CHANGES_REQUESTED" || review.GetState() == "APPROVED" {
-            if firstReviewTime == nil || submittedAt.Before(*firstReviewTime) {
-                firstReviewTime = &submittedAt
-            }
-        }
+		if review.GetState() == "COMMENTED" || review.GetState() == "CHANGES_REQUESTED" || review.GetState() == "APPROVED" {
+			if firstReviewTime == nil || submittedAt.Before(*firstReviewTime) {
+				firstReviewTime = &submittedAt
+			}
+		}
 
-        if review.GetState() == "APPROVED" && approvalTime == nil {
-            approvalTime = &submittedAt
-        }
+		if review.GetState() == "APPROVED" && approvalTime == nil {
+			approvalTime = &submittedAt
+		}
 
-        if review.GetState() == "CHANGES_REQUESTED" || review.GetState() == "COMMENTED" {
-            reviewIterations++
-        }
-    }
+		if review.GetState() == "CHANGES_REQUESTED" || review.GetState() == "COMMENTED" {
+			reviewIterations++
+		}
+	}
 
-    timeToMerge := mergedAt.Sub(createdAt.Time)
-    var timeToFirstReview, timeToApproval, timeFromApprovalToMerge time.Duration
+	timeToMerge := mergedAt.Sub(createdAt.Time)
+	var timeToFirstReview, timeToApproval, timeFromApprovalToMerge time.Duration
 
-    if firstReviewTime != nil {
-        timeToFirstReview = firstReviewTime.Sub(createdAt.Time)
-    }
-    if approvalTime != nil {
-        timeToApproval = approvalTime.Sub(createdAt.Time)
-    }
-    if approvalTime != nil && !mergedAt.IsZero() {
-        timeFromApprovalToMerge = timeToMerge - timeToApproval
-    }
+	if firstReviewTime != nil {
+		timeToFirstReview = firstReviewTime.Sub(createdAt.Time)
+	}
+	if approvalTime != nil {
+		timeToApproval = approvalTime.Sub(createdAt.Time)
+	}
+	if approvalTime != nil && !mergedAt.IsZero() {
+		timeFromApprovalToMerge = timeToMerge - timeToApproval
+	}
 
-    sizeCategory := categorizePRSize(pr)
-    locChanged := pr.GetAdditions() + pr.GetDeletions()
+	sizeCategory := categorizePRSize(pr)
+	locChanged := pr.GetAdditions() + pr.GetDeletions()
 
-    metrics := &PRMetrics{
-        Number:                  prNumber,
-        RepoName:                repo,
-        Title:                   pr.GetTitle(),
-        CreatedAt:               createdAt.Time,
-        MergedAt:                mergedAt.Time,
-        TimeToFirstReview:       timeToFirstReview,
-        TimeToApproval:          timeToApproval,
-        TimeToMerge:             timeToMerge,
-        TimeFromApprovalToMerge: timeFromApprovalToMerge,
-        ReviewIterations:        reviewIterations,
-        SizeCategory:            sizeCategory,
-        PRUrl:                   pr.GetHTMLURL(),
-        CreatedBy:               pr.GetUser().GetLogin(),
-        Additions:               pr.GetAdditions(),
-        Deletions:               pr.GetDeletions(),
-        ChangedFiles:            pr.GetChangedFiles(),
-        LOCChanged:              locChanged,
-    }
+	metrics := &PRMetrics{
+		Number:                  prNumber,
+		RepoName:                repo,
+		Title:                   pr.GetTitle(),
+		CreatedAt:               createdAt.Time,
+		MergedAt:                mergedAt.Time,
+		TimeToFirstReview:       timeToFirstReview,
+		TimeToApproval:          timeToApproval,
+		TimeToMerge:             timeToMerge,
+		TimeFromApprovalToMerge: timeFromApprovalToMerge,
+		ReviewIterations:        reviewIterations,
+		SizeCategory:            sizeCategory,
+		PRUrl:                   pr.GetHTMLURL(),
+		CreatedBy:               pr.GetUser().GetLogin(),
+		Additions:               pr.GetAdditions(),
+		Deletions:               pr.GetDeletions(),
+		ChangedFiles:            pr.GetChangedFiles(),
+		LOCChanged:              locChanged,
+	}
 
-    return metrics, nil
+	return metrics, nil
 }
 
 func ListMergedPRs(ctx context.Context, client *github.Client, owner, repo string, since, until time.Time) ([]*github.Issue, error) {
@@ -203,32 +203,3 @@ func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics) error {
 
 	return nil
 }
-// 	return map[string]interface{}{
-// 		"tag":            "column",
-// 		"width":          "weighted",
-// 		"weight":         1,
-// 		"vertical_align": "top",
-// 		"elements": []interface{}{
-// 			map[string]interface{}{
-// 				"tag":              "column_set",
-// 				"flex_mode":        "none",
-// 				"background_style": "grey",
-// 				"columns": []interface{}{
-// 					map[string]interface{}{
-// 						"tag":            "column",
-// 						"width":          "weighted",
-// 						"weight":         1,
-// 						"vertical_align": "top",
-// 						"elements": []interface{}{
-// 							map[string]interface{}{
-// 								"tag":        "markdown",
-// 								"content":    fmt.Sprintf("%s\n<font color='green'>%s</font>\n", title, value),
-// 								"text_align": "center",
-// 							},
-// 						},
-// 					},
-// 				},
-// 			},
-// 		},
-// 	}
-// }
