@@ -15,9 +15,12 @@ type (
 	}
 
 	Lark struct {
-			Secret           			string `yaml:"secret"`
-			WebHookUrl        		string   `yaml:"webhook_url"`
-		}
+		Secret           			string `yaml:"secret"`
+		WebHookUrl        		string   `yaml:"webhook_url"`
+		AppId     						string `yaml:"app_id"`
+		AppSecret     				string `yaml:"app_secret"`
+		GithubToEmailMap 			string `yaml:"github_to_email_map"`
+	}
 
 	Telemetry struct {
 		Enabled              		bool   `yaml:"enabled"`

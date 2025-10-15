@@ -3,6 +3,7 @@ package config
 import (
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v2"
@@ -91,10 +92,41 @@ func (c *cfg) GetLarkSecret() string {
 	return loaded.Lark.Secret
 }
 
+func (c *cfg) GetLarkAppID() string {
+	loaded := c.fileLoad()
+	return loaded.Lark.AppId
+}
+
+func (c *cfg) GetLarkAppSecret() string {
+	loaded := c.fileLoad()
+	return loaded.Lark.AppSecret
+}
+
 func (c *cfg) GetLarkWebhookURL() string {
 	loaded := c.fileLoad()
 	return loaded.Lark.WebHookUrl
 }
+
+func (c *cfg) GetLarkGithubToEmailMap() map[string]string {
+    loaded := c.fileLoad()
+    raw := strings.TrimSpace(loaded.Lark.GithubToEmailMap)
+    if raw == "" {
+        return nil
+    }
+
+    result := make(map[string]string)
+    pairs := strings.Split(raw, ",")
+    for _, p := range pairs {
+        kv := strings.SplitN(strings.TrimSpace(p), "=", 2)
+        if len(kv) == 2 {
+            key := strings.TrimSpace(kv[0])
+            val := strings.TrimSpace(kv[1])
+            result[key] = val
+        }
+    }
+    return result
+}
+
 
 // --- TELEMETRY CONFIG ---
 

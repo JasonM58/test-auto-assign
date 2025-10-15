@@ -70,7 +70,6 @@ func GenSign(secret string, timestamp int64) (string, error) {
    return signature, nil
 }
 
-
 func SendLarkCard(secret, webhookURL string, card interface{}) error {
 	timestamp := time.Now().Unix()
 
@@ -109,4 +108,28 @@ func SendLarkCard(secret, webhookURL string, card interface{}) error {
 	return nil
 }
 
+func SendLarkWebhookMessage(webhookURL, secret string, msg map[string]interface{}) error {
+	payload := msg
 
+	if secret != "" {
+		timestamp := time.Now().Unix()
+		sign, err := GenSign(secret, timestamp)
+		if err != nil {
+			return fmt.Errorf("failed to sign Lark message: %w", err)
+		}
+		payload["timestamp"] = fmt.Sprintf("%d", timestamp)
+		payload["sign"] = sign
+	}
+
+	body, _ := json.Marshal(payload)
+	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		return fmt.Errorf("failed to send Lark request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Lark webhook returned non-200 status: %s", resp.Status)
+	}
+	return nil
+}

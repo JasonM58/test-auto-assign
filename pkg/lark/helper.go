@@ -1,12 +1,35 @@
 package lark
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/ionextai/git-scrapper/pkg/githubclient"
 )
+
+type TenantAccessTokenResponse struct {
+	Code              int    `json:"code"`
+	Msg               string `json:"msg"`
+	TenantAccessToken string `json:"tenant_access_token"`
+	Expire            int    `json:"expire"`
+}
+
+type LarkUser struct {
+	Email  string `json:"email"`
+	UserID string `json:"user_id"`
+}
+
+type larkUserResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data struct {
+		UserList []LarkUser `json:"user_list"`
+	} `json:"data"`
+}
 
 func FormatDuration(d time.Duration) string {
     days := int(d.Hours()) / 24
@@ -178,4 +201,154 @@ func BuildReminderCard(createdBy string, reviewers []string, createdAt time.Time
 			},
 		},
 	}
+}
+
+func BuildReminderMessage(openIDs []string, createdBy string, reviewers []string, createdAt time.Time, prURL, repoName string) map[string]interface{} {
+	reviewerList := "(no reviewers)"
+	if len(reviewers) > 0 {
+		reviewerList = fmt.Sprintf("%s", reviewers[0])
+		if len(reviewers) > 1 {
+			reviewerList += fmt.Sprintf(" and %d others", len(reviewers)-1)
+		}
+	}
+
+	var intro []map[string]interface{}
+	intro = append(intro, map[string]interface{}{
+		"tag": "text",
+		"text": "Hi ",
+	})
+	for _, id := range openIDs {
+		intro = append(intro, map[string]interface{}{
+			"tag":     "at",
+			"user_id": id,
+		})
+		intro = append(intro, map[string]interface{}{
+			"tag": "text",
+			"text": " ",
+		})
+	}
+	intro = append(intro, map[string]interface{}{
+		"tag": "text",
+		"text": "👋\n\nYou have a pending PR in ",
+	})
+	intro = append(intro, map[string]interface{}{
+		"tag": "text",
+		"text": fmt.Sprintf("%s", repoName),
+	})
+	intro = append(intro, map[string]interface{}{
+		"tag": "text",
+		"text": " that needs your review.\n\n",
+	})
+
+	content := [][]map[string]interface{}{
+		intro,
+		{
+			{
+				"tag": "text",
+				"text": fmt.Sprintf(
+					"Created By: %s\nReviewer(s): %s\nOpened For: %s\n\n",
+					createdBy,
+					reviewerList,
+					FormatDuration(time.Since(createdAt)),
+				),
+			},
+		},
+		{
+			{
+				"tag":  "a",
+				"text": "👉 View Pull Request",
+				"href": prURL,
+			},
+		},
+	}
+
+	// Return final message body
+	return map[string]interface{}{
+		"msg_type": "post",
+		"content": map[string]interface{}{
+			"post": map[string]interface{}{
+				"en_us": map[string]interface{}{
+					"title":   "🔔 Pull Request Reminder",
+					"content": content,
+				},
+			},
+		},
+	}
+}
+
+func FetchLarkUserMap(tenantAccessToken string, emails []string) (map[string]string, error) {
+	if len(emails) == 0 {
+		return nil, fmt.Errorf("no emails provided")
+	}
+
+	url := "https://open.larksuite.com/open-apis/contact/v3/users/batch_get_id?user_id_type=open_id"
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"emails": emails,
+	})
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+tenantAccessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call Lark API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result larkUserResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode Lark API response: %w", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("Lark API error: %s (code: %d)", result.Msg, result.Code)
+	}
+
+	mapping := make(map[string]string)
+	for _, user := range result.Data.UserList {
+		mapping[user.Email] = user.UserID
+	}
+
+	return mapping, nil
+}
+
+func GetTenantAccessToken(appID, appSecret string) (string, error) {
+	url := "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal"
+
+	body, _ := json.Marshal(map[string]string{
+		"app_id":     appID,
+		"app_secret": appSecret,
+	})
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to request Lark token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var tokenResp TenantAccessTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", fmt.Errorf("failed to decode Lark token response: %w", err)
+	}
+
+	if tokenResp.Code != 0 {
+		return "", fmt.Errorf("Lark token error: %s (code %d)", tokenResp.Msg, tokenResp.Code)
+	}
+
+	return tokenResp.TenantAccessToken, nil
 }

@@ -70,6 +70,15 @@ func main() {
 		log.Fatalf("❌ failed to list installation repos: %v", err)
 	}
 
+	// --- Lark ---
+	appID := cfg.GetLarkAppID()
+	appSecret := cfg.GetLarkAppSecret()
+
+	tenantToken, err := lark.GetTenantAccessToken(appID, appSecret)
+	if err != nil {
+		log.Fatalf("❌ Failed to get tenant access token: %v", err)
+	}
+
 	for _, repo := range repos.Repositories {
 		owner := repo.GetOwner().GetLogin()
 		repoName := repo.GetName()
@@ -116,18 +125,35 @@ func main() {
 			}
 
 			if pr.GetClosedAt().IsZero() {
-					// Open PR → Reminder card
-					reminderCard := lark.BuildReminderCard(
-							pr.GetUser().GetLogin(),
-							reviewers,
-							createdAt,
-							pr.GetHTMLURL(),
-							repoName,
-					)
-					if err := lark.SendLarkCard(cfg.GetLarkSecret(), cfg.GetLarkWebhookURL(), reminderCard); err != nil {
-							log.Printf("❌ Failed to send reminder card for PR #%d: %v", pr.GetNumber(), err)
-					}
+				var emails []string
+				emailMap := cfg.GetLarkGithubToEmailMap()
 
+				for _, gh := range reviewers {
+					if email, ok := emailMap[gh]; ok {
+						emails = append(emails, email)
+					}
+				}
+
+				openIDMap, _ := lark.FetchLarkUserMap(tenantToken, emails)
+				var openIDs []string
+				for _, email := range emails {
+					if id, ok := openIDMap[email]; ok {
+						openIDs = append(openIDs, id)
+					}
+				}
+
+				msg := lark.BuildReminderMessage(
+					openIDs,
+					pr.GetUser().GetLogin(),
+					reviewers,
+					createdAt,
+					pr.GetHTMLURL(),
+					repoName,
+				)
+			
+				if err := lark.SendLarkWebhookMessage(cfg.GetLarkWebhookURL(), cfg.GetLarkSecret(), msg); err != nil {
+					log.Printf("❌ Failed to send Lark notification for PR #%d: %v", pr.GetNumber(), err)
+				}
 			} else {
 					metrics, err := githubclient.GetPRMetrics(ctx, client, owner, repoName, prDetail)
 					if err != nil {
