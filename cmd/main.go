@@ -79,6 +79,14 @@ func main() {
 		log.Fatalf("❌ Failed to get tenant access token: %v", err)
 	}
 
+	// --- Email Reviewers ---
+	var emails []string
+	emailMap := cfg.GetLarkGithubToEmailMap()
+
+	// Configs
+	var larkWebhookUrl = cfg.GetLarkWebhookURL()
+	var larkSecret = cfg.GetLarkSecret()
+
 	for _, repo := range repos.Repositories {
 		owner := repo.GetOwner().GetLogin()
 		repoName := repo.GetName()
@@ -111,12 +119,15 @@ func main() {
 			}
 
 			reviews, _, err := client.PullRequests.ListReviews(ctx, owner, repoName, prDetail.GetNumber(), nil)
-			if err == nil {
-					for _, rev := range reviews {
-							login := rev.GetUser().GetLogin()
-							if login != "" && !githubclient.Contains(reviewers, login) {
-									reviewers = append(reviewers, login)
-							}
+			if err != nil {
+					log.Printf("failed to list reviews for PR #%d in %s/%s: %v", prDetail.GetNumber(), owner, repoName, err)
+					return
+			}
+
+			for _, rev := range reviews {
+					login := rev.GetUser().GetLogin()
+					if login != "" && !githubclient.Contains(reviewers, login) {
+							reviewers = append(reviewers, login)
 					}
 			}
 
@@ -125,9 +136,6 @@ func main() {
 			}
 
 			if pr.GetClosedAt().IsZero() {
-				var emails []string
-				emailMap := cfg.GetLarkGithubToEmailMap()
-
 				for _, gh := range reviewers {
 					if email, ok := emailMap[gh]; ok {
 						emails = append(emails, email)
@@ -151,7 +159,7 @@ func main() {
 					repoName,
 				)
 			
-				if err := lark.SendLarkWebhookMessage(cfg.GetLarkWebhookURL(), cfg.GetLarkSecret(), msg); err != nil {
+				if err := lark.SendLarkWebhookMessage(larkWebhookUrl, larkSecret, msg); err != nil {
 					log.Printf("❌ Failed to send Lark notification for PR #%d: %v", pr.GetNumber(), err)
 				}
 			} else {
@@ -166,7 +174,7 @@ func main() {
 
 					// Send report card
 					reportCard := lark.BuildPRReportCard(metrics)
-					if err := lark.SendLarkCard(cfg.GetLarkSecret(), cfg.GetLarkWebhookURL(), reportCard); err != nil {
+					if err := lark.SendLarkCard(larkSecret, larkWebhookUrl, reportCard); err != nil {
 							log.Printf("❌ Failed to send Lark report card for PR #%d: %v", pr.GetNumber(), err)
 					}
 			}
