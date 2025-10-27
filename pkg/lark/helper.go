@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/ionextai/git-scrapper/pkg/githubclient"
+	"github.com/ionextai/git-beacon/pkg/githubclient"
 )
 
 type TenantAccessTokenResponse struct {
@@ -31,7 +30,14 @@ type larkUserResponse struct {
 	} `json:"data"`
 }
 
-func FormatDuration(d time.Duration) string {
+func FormatDuration(d time.Duration, isClosed bool) string {
+    if d <= 0 {
+        if isClosed {
+					return "<1 minute"
+        }
+        return "Just Now"
+    }
+
     days := int(d.Hours()) / 24
     hours := int(d.Hours()) % 24
     minutes := int(d.Minutes()) % 60
@@ -89,9 +95,9 @@ func BuildPRReportCard(metrics *githubclient.PRMetrics) map[string]interface{} {
 					metrics.Title,
 					metrics.CreatedBy,
 					metrics.LOCChanged,
-					FormatDuration(metrics.TimeToFirstReview),
-					FormatDuration(metrics.TimeToApproval),
-					FormatDuration(metrics.TimeToMerge),
+					FormatDuration(metrics.TimeToFirstReview, true),
+					FormatDuration(metrics.TimeToApproval, true),
+					FormatDuration(metrics.TimeToMerge, true),
 					FormatShortDuration(metrics.TimeFromApprovalToMerge),
 					metrics.ReviewIterations,
 				),
@@ -152,57 +158,6 @@ func columnItem(title, value string) map[string]interface{} {
 	}
 }
 
-func BuildReminderCard(createdBy string, reviewers []string, createdAt time.Time, prURL string, repoName string) map[string]interface{} {
-	reviewerList := "(no reviewers)"
-	if len(reviewers) > 0 {
-		reviewerList = strings.Join(reviewers, ", ")
-	}
-
-	return map[string]interface{}{
-		"config": map[string]interface{}{
-			"wide_screen_mode": true,
-		},
-		"elements": []interface{}{
-			map[string]interface{}{
-				"tag": "div",
-				"text": map[string]interface{}{
-					"content": "You have pending pull requests that need your attention. Please review or merge them to keep development on track.",
-					"tag":     "lark_md",
-				},
-			},
-			map[string]interface{}{
-				"tag":              "column_set",
-				"flex_mode":        "none",
-				"background_style": "default",
-				"columns": []interface{}{
-					columnItem("**Repository**", repoName),
-					columnItem("**Created By**", createdBy),
-					columnItem("**Reviewer**", reviewerList),
-					columnItem("**Opened For**", FormatDuration(time.Since(createdAt))),
-				},
-			},
-			map[string]interface{}{
-				"tag": "action",
-				"actions": []interface{}{
-					map[string]interface{}{
-						"tag":  "button",
-						"text": map[string]interface{}{"content": "View Pull Request", "tag": "plain_text"},
-						"url":  prURL,
-						"type": "primary",
-					},
-				},
-			},
-		},
-		"header": map[string]interface{}{
-			"template": "yellow",
-			"title": map[string]interface{}{
-				"content": "🔔 Pull Request Reminder",
-				"tag":     "plain_text",
-			},
-		},
-	}
-}
-
 func BuildReminderMessage(openIDs []string, createdBy string, reviewers []string, createdAt time.Time, prURL, repoName string) map[string]interface{} {
 	reviewerList := "(no reviewers)"
 	if len(reviewers) > 0 {
@@ -249,7 +204,7 @@ func BuildReminderMessage(openIDs []string, createdBy string, reviewers []string
 					"Created By: %s\nReviewer(s): %s\nOpened For: %s\n\n",
 					createdBy,
 					reviewerList,
-					FormatDuration(time.Since(createdAt)),
+					FormatDuration(time.Since(createdAt), false),
 				),
 			},
 		},

@@ -10,49 +10,47 @@ import (
 )
 
 type (
-	cfg struct {
+	Loader struct {
 		configFilePath string
 	}
 )
 
 var (
 	configOnce    sync.Once
-	configVar     cfg
+	loaderVar     Loader
 	fileLoadOnce  sync.Once
-	config        Config
+	loadedConfig  Config
 	loadErr       error
 )
 
-// NewConfig initializes config singleton
-func NewConfig(configFilePath string) *cfg {
+// NewLoader initializes the config loader singleton.
+func NewLoader(configFilePath string) *Loader {
 	configOnce.Do(func() {
-		configVar = cfg{configFilePath: configFilePath}
+		loaderVar = Loader{configFilePath: configFilePath}
 	})
-	return &configVar
+	return &loaderVar
 }
 
-// fileLoad reads the YAML file once and caches it
-func (c *cfg) fileLoad() Config {
+func (l *Loader) fileLoad() Config {
 	fileLoadOnce.Do(func() {
-		f, err := os.ReadFile(c.configFilePath)
+		f, err := os.ReadFile(l.configFilePath)
 		if err != nil {
 			loadErr = err
 			slog.Error("failed to read config file", slog.Any("error", err))
 			return
 		}
 
-		if err := yaml.Unmarshal(f, &config); err != nil {
+		if err := yaml.Unmarshal(f, &loadedConfig); err != nil {
 			loadErr = err
 			slog.Error("failed to unmarshal config file", slog.Any("error", err))
 			return
 		}
 	})
-	return config
+	return loadedConfig
 }
 
-// Reload re-reads the config file — useful for local/dev hot reload
-func (c *cfg) Reload() error {
-	f, err := os.ReadFile(c.configFilePath)
+func (l *Loader) Reload() error {
+	f, err := os.ReadFile(l.configFilePath)
 	if err != nil {
 		return err
 	}
@@ -62,104 +60,71 @@ func (c *cfg) Reload() error {
 		return err
 	}
 
-	config = newConfig
+	loadedConfig = newConfig
 	loadErr = nil
-	slog.Info("config reloaded successfully", slog.String("path", c.configFilePath))
+	slog.Info("config reloaded successfully", slog.String("path", l.configFilePath))
 	return nil
 }
 
 // --- GITHUB CONFIG ---
-
-func (c *cfg) GetGithubAppId() int64 {
-	loaded := c.fileLoad()
-	return loaded.Github.AppId
+func (l *Loader) GetGithubAppId() int64 { return l.fileLoad().Github.AppId }
+func (l *Loader) GetGithubPrivateKeyPath() string {
+	return l.fileLoad().Github.PrivateKeyPath
 }
-
-func (c *cfg) GetGithubPrivateKeyPath() string {
-	loaded := c.fileLoad()
-	return loaded.Github.PrivateKeyPath
-}
-
-func (c *cfg) GetGithubPrivateKey() string {
-	loaded := c.fileLoad()
-	return loaded.Github.PrivateKey
-}
+func (l *Loader) GetGithubPrivateKey() string { return l.fileLoad().Github.PrivateKey }
 
 // --- LARK CONFIG ---
-
-func (c *cfg) GetLarkSecret() string {
-	loaded := c.fileLoad()
-	return loaded.Lark.Secret
+func (l *Loader) GetLarkSecret() string { return l.fileLoad().Lark.Secret }
+func (l *Loader) GetLarkAppID() string  { return l.fileLoad().Lark.AppId }
+func (l *Loader) GetLarkAppSecret() string {
+	return l.fileLoad().Lark.AppSecret
 }
-
-func (c *cfg) GetLarkAppID() string {
-	loaded := c.fileLoad()
-	return loaded.Lark.AppId
+func (l *Loader) GetLarkWebhookURL() string {
+	return l.fileLoad().Lark.WebHookUrl
 }
+func (l *Loader) GetLarkGithubToEmailMap() map[string]string {
+	raw := strings.TrimSpace(l.fileLoad().Lark.GithubToEmailMap)
+	if raw == "" {
+		return nil
+	}
 
-func (c *cfg) GetLarkAppSecret() string {
-	loaded := c.fileLoad()
-	return loaded.Lark.AppSecret
+	result := make(map[string]string)
+	pairs := strings.Split(raw, ",")
+	for _, p := range pairs {
+		kv := strings.SplitN(strings.TrimSpace(p), "=", 2)
+		if len(kv) == 2 {
+			result[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+	return result
 }
-
-func (c *cfg) GetLarkWebhookURL() string {
-	loaded := c.fileLoad()
-	return loaded.Lark.WebHookUrl
-}
-
-func (c *cfg) GetLarkGithubToEmailMap() map[string]string {
-    loaded := c.fileLoad()
-    raw := strings.TrimSpace(loaded.Lark.GithubToEmailMap)
-    if raw == "" {
-        return nil
-    }
-
-    result := make(map[string]string)
-    pairs := strings.Split(raw, ",")
-    for _, p := range pairs {
-        kv := strings.SplitN(strings.TrimSpace(p), "=", 2)
-        if len(kv) == 2 {
-            key := strings.TrimSpace(kv[0])
-            val := strings.TrimSpace(kv[1])
-            result[key] = val
-        }
-    }
-    return result
-}
-
 
 // --- TELEMETRY CONFIG ---
-
-func (c *cfg) GetTelemetryEnabled() bool {
-	loaded := c.fileLoad()
-	return loaded.Telemetry.Enabled
+func (l *Loader) GetTelemetryEnabled() bool {
+	return l.fileLoad().Telemetry.Enabled
 }
-
-func (c *cfg) GetOTLPEndpoint() string {
-	loaded := c.fileLoad()
-	if loaded.Telemetry.OTLPEndpoint == "" {
+func (l *Loader) GetOTLPEndpoint() string {
+	t := l.fileLoad().Telemetry
+	if t.OTLPEndpoint == "" {
 		return "localhost:4317"
 	}
-	return loaded.Telemetry.OTLPEndpoint
+	return t.OTLPEndpoint
 }
-
-func (c *cfg) GetOTLPInsecure() bool {
-	loaded := c.fileLoad()
-	return loaded.Telemetry.OTLPInsecure || loaded.Telemetry.OTLPEndpoint == ""
+func (l *Loader) GetOTLPInsecure() bool {
+	t := l.fileLoad().Telemetry
+	return t.OTLPInsecure || t.OTLPEndpoint == ""
 }
-
-func (c *cfg) GetEnvironment() string {
-	loaded := c.fileLoad()
-	if loaded.Telemetry.Environment == "" {
+func (l *Loader) GetEnvironment() string {
+	env := l.fileLoad().Telemetry.Environment
+	if env == "" {
 		return "dev"
 	}
-	return loaded.Telemetry.Environment
+	return env
 }
-
-func (c *cfg) GetTelemetryMetricExportInterval() int {
-	loaded := c.fileLoad()
-	if loaded.Telemetry.MetricExportInterval == 0 {
-		return 10 // default
+func (l *Loader) GetTelemetryMetricExportInterval() int {
+	val := l.fileLoad().Telemetry.MetricExportInterval
+	if val == 0 {
+		return 10
 	}
-	return loaded.Telemetry.MetricExportInterval
+	return val
 }

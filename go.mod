@@ -1,4 +1,4 @@
-module github.com/ionextai/git-scrapper
+module github.com/ionextai/git-beacon
 
 go 1.24.0
 
