@@ -56,8 +56,6 @@ func LoadPrivateKey(input string) (*rsa.PrivateKey, error) {
 	return key, nil
 }
 
-
-
 func (a *GitHubAuth) GenerateJWT() (string, error) {
 	now := time.Now()
 	claims := jwt.StandardClaims{
