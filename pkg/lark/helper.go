@@ -74,6 +74,21 @@ func FormatShortDuration(d time.Duration) string {
 }
 
 func BuildPRReportCard(metrics *githubclient.PRMetrics) map[string]interface{} {
+	var timeToFirstReviewText string
+	var timeToApprovalText string
+
+	if metrics.TimeToApproval == 0 {
+		timeToApprovalText = "❌ Not yet approved"
+	} else {
+		timeToApprovalText = FormatDuration(metrics.TimeToApproval, true)
+	}
+
+	if metrics.TimeToFirstReview == 0 {
+		timeToFirstReviewText = "❌ Not yet reviewed"
+	} else {
+		timeToFirstReviewText = FormatDuration(metrics.TimeToFirstReview, true)
+	}
+
 	return map[string]interface{}{
 		"config": map[string]interface{}{
 			"wide_screen_mode": true,
@@ -95,8 +110,8 @@ func BuildPRReportCard(metrics *githubclient.PRMetrics) map[string]interface{} {
 					metrics.Title,
 					metrics.CreatedBy,
 					metrics.LOCChanged,
-					FormatDuration(metrics.TimeToFirstReview, true),
-					FormatDuration(metrics.TimeToApproval, true),
+					timeToFirstReviewText,
+					timeToApprovalText,
 					FormatDuration(metrics.TimeToMerge, true),
 					FormatShortDuration(metrics.TimeFromApprovalToMerge),
 					metrics.ReviewIterations,

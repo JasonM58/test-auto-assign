@@ -52,7 +52,10 @@ func FetchPRs(ctx context.Context, client *github.Client, repo Repository, today
 		log.Printf("⚠️ Failed to list open PRs: %v", err)
 	}
 
-	all := append(mergedIssues, openIssues...)
+	all := make([]*github.Issue, 0, len(mergedIssues)+len(openIssues))
+	all = append(all, mergedIssues...)
+	all = append(all, openIssues...)
+
 	var prs []PullRequest
 
 	for _, issue := range all {
