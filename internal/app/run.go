@@ -15,7 +15,7 @@ import (
 const locationName = "Asia/Jakarta"
 
 func Run(ctx context.Context, cfg *config.Loader) {
-	loc, _ := time.LoadLocation("Asia/Jakarta")
+	loc, _ := time.LoadLocation(locationName)
 	today := time.Now().In(loc).Truncate(24 * time.Hour)
 	tomorrow := today.Add(24 * time.Hour)
 
@@ -25,21 +25,27 @@ func Run(ctx context.Context, cfg *config.Loader) {
 
 	notifier := internallark.NewNotifier(cfg, client)
 
-	repos := internalgithub.FetchRepositories(ctx, client)
-	for _, repo := range repos {
-		fmt.Printf("🔍 Checking repo: %s/%s\n", repo.Owner, repo.Name)
-		prs := internalgithub.FetchPRs(ctx, client, repo, today, tomorrow)
-		sort.Slice(prs, func(i, j int) bool {
-        return prs[i].IsOpen && !prs[j].IsOpen
-    })
-		for _, pr := range prs {
-			if pr.IsOpen {
+	org := "ionextai"
+	fmt.Printf("🏢 Fetching all PRs in org")
+
+	allPRs := internalgithub.FetchPRsByOrg(ctx, client, org, today, tomorrow)
+
+	sort.Slice(allPRs, func(i, j int) bool {
+			if allPRs[i].IsOpen != allPRs[j].IsOpen {
+					return allPRs[i].IsOpen && !allPRs[j].IsOpen
+			}
+			return allPRs[i].CreatedAt.After(allPRs[j].CreatedAt)
+	})
+
+	for _, pr := range allPRs {
+		fmt.Println(pr.Author, pr.IsOpen)
+		if pr.IsOpen {
 				notifier.NotifyOpenPR(ctx, pr)
-			} else {
+		} else {
 				notifier.NotifyMergedPR(ctx, pr)
 				internalgithub.SendMetrics(ctx, client, pr)
-			}
 		}
 	}
-}
 
+	fmt.Println("Finish Sending Message")
+}

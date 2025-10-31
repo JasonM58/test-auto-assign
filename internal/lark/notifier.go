@@ -35,10 +35,30 @@ func NewNotifier(cfg *config.Loader, ghClient *github.Client) *Notifier {
 
 func (n *Notifier) NotifyOpenPR(ctx context.Context, pr internalgithub.PullRequest) {
 	emails := mapReviewersToEmails(pr.AllReviewers, n.emailMap)
+
+	if len(emails) == 0 {
+		log.Printf("⚠️ Skipping PR #%d (%s): no reviewers with mapped emails", pr.Number, pr.URL)
+		return
+	}
+
 	openIDMap, _ := lark.FetchLarkUserMap(n.tenantToken, emails)
 
+	openIDs := make([]string, 0, len(emails))
+	for _, email := range emails {
+		if id, ok := openIDMap[email]; ok && id != "" {
+			openIDs = append(openIDs, id)
+		} else {
+			log.Printf("⚠️ No Lark user found for reviewer email: %s (PR #%d)", email, pr.Number)
+		}
+	}
+
+	if len(openIDs) == 0 {
+		log.Printf("⚠️ Skipping PR #%d (%s): no valid Lark user IDs found", pr.Number, pr.URL)
+		return
+	}
+
 	msg := lark.BuildReminderMessage(
-		[]string{openIDMap[emails[0]]},
+		openIDs,
 		pr.Author,
 		pr.AllReviewers,
 		pr.CreatedAt,

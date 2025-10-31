@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/go-github/v61/github"
@@ -26,6 +27,97 @@ type PullRequest struct {
 	AllReviewers    []string
 }
 
+func FetchPRsByOrg(ctx context.Context, client *github.Client, org string, today, tomorrow time.Time) []PullRequest {
+	openIssues, err := githubclient.ListOpenPRsByOrg(ctx, client, org)
+	if err != nil {
+		log.Printf("Failed to list open PRs for org %s: %v", org, err)
+	}
+
+	mergedIssues, err := githubclient.ListMergedPRsByOrg(ctx, client, org, today, tomorrow)
+	if err != nil {
+		log.Printf("Failed to list merged PRs for org %s: %v", org, err)
+	}
+
+	all := append(mergedIssues, openIssues...)
+	var prs []PullRequest
+
+	for _, issue := range all {
+		repoURL := issue.GetRepositoryURL()
+		parts := strings.Split(repoURL, "/")
+		if len(parts) < 2 {
+				continue
+		}
+		owner := parts[len(parts)-2]
+		repoName := parts[len(parts)-1]
+
+		prDetail, _, err := client.PullRequests.Get(ctx, owner, repoName, issue.GetNumber())
+		if err != nil {
+				if _, ok := err.(*github.RateLimitError); ok {
+						limits, _, _ := client.RateLimit.Get(ctx)
+						if limits != nil && limits.Core != nil {
+								reset := time.Until(limits.Core.Reset.Time)
+								log.Printf("Rate limit hit, sleeping for %v...", reset)
+								time.Sleep(reset + time.Second)
+								continue
+						}
+				}
+				log.Printf("Failed to fetch PR #%d (%s/%s): %v", issue.GetNumber(), owner, repoName, err)
+				continue
+		}
+
+		requestedUsers := []string{}
+		for _, user := range prDetail.RequestedReviewers {
+				requestedUsers = append(requestedUsers, user.GetLogin())
+		}
+
+		requestedTeams := []string{}
+		for _, team := range prDetail.RequestedTeams {
+				requestedTeams = append(requestedTeams, team.GetName())
+		}
+
+		reviews, _, _ := client.PullRequests.ListReviews(ctx, owner, repoName, issue.GetNumber(), nil)
+		actualReviewers := make([]string, 0)
+		for _, review := range reviews {
+				if review.User != nil {
+						actualReviewers = append(actualReviewers, review.User.GetLogin())
+				}
+		}
+
+		unique := make(map[string]bool)
+		for _, n := range requestedUsers {
+				unique[n] = true
+		}
+		for _, n := range requestedTeams {
+				unique[n] = true
+		}
+		for _, n := range actualReviewers {
+				unique[n] = true
+		}
+
+		allReviewers := make([]string, 0, len(unique))
+		for n := range unique {
+				if n == prDetail.GetUser().GetLogin() {
+						continue
+				}
+				allReviewers = append(allReviewers, n)
+		}
+
+		prs = append(prs, PullRequest{
+				Number:       prDetail.GetNumber(),
+				URL:          prDetail.GetHTMLURL(),
+				Author:       prDetail.GetUser().GetLogin(),
+				IsOpen:       prDetail.GetClosedAt().IsZero(),
+				CreatedAt:    prDetail.GetCreatedAt().Time,
+				ClosedAt:     getClosedTime(prDetail),
+				Repo:         Repository{Owner: owner, Name: repoName},
+				AllReviewers: allReviewers,
+				RawPR:        prDetail,
+		})
+	}
+
+	return prs
+}
+
 func FetchRepositories(ctx context.Context, client *github.Client) []Repository {
 	repos, _, err := client.Apps.ListRepos(ctx, &github.ListOptions{PerPage: 100})
 	if err != nil {
@@ -45,12 +137,12 @@ func FetchRepositories(ctx context.Context, client *github.Client) []Repository 
 func FetchPRs(ctx context.Context, client *github.Client, repo Repository, today, tomorrow time.Time) []PullRequest {
 	mergedIssues, err := githubclient.ListMergedPRs(ctx, client, repo.Owner, repo.Name, today, tomorrow)
 	if err != nil {
-		log.Printf("⚠️ Failed to list merged PRs: %v", err)
+		log.Printf("Failed to list merged PRs: %v", err)
 	}
 
 	openIssues, err := githubclient.ListOpenPRs(ctx, client, repo.Owner, repo.Name)
 	if err != nil {
-		log.Printf("⚠️ Failed to list open PRs: %v", err)
+		log.Printf("Failed to list open PRs: %v", err)
 	}
 
 	all := make([]*github.Issue, 0, len(mergedIssues)+len(openIssues))
@@ -62,7 +154,7 @@ func FetchPRs(ctx context.Context, client *github.Client, repo Repository, today
 	for _, issue := range all {
 		prDetail, _, err := client.PullRequests.Get(ctx, repo.Owner, repo.Name, issue.GetNumber())
 		if err != nil {
-				log.Printf("⚠️ Failed to fetch PR #%d details: %v", issue.GetNumber(), err)
+				log.Printf("Failed to fetch PR #%d details: %v", issue.GetNumber(), err)
 				continue
 		}
 
@@ -81,7 +173,7 @@ func FetchPRs(ctx context.Context, client *github.Client, repo Repository, today
 		// Actual reviewers
 		reviews, _, err := client.PullRequests.ListReviews(ctx, repo.Owner, repo.Name, issue.GetNumber(), nil)
 		if err != nil {
-				log.Printf("⚠️ Failed to list reviews for PR #%d: %v", issue.GetNumber(), err)
+				log.Printf("Failed to list reviews for PR #%d: %v", issue.GetNumber(), err)
 		}
 
 		actualReviewers := make([]string, 0)
