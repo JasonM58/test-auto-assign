@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	internalgithub "github.com/ionextai/git-beacon/internal/github"
@@ -28,6 +29,9 @@ func Run(ctx context.Context, cfg *config.Loader) {
 	for _, repo := range repos {
 		fmt.Printf("🔍 Checking repo: %s/%s\n", repo.Owner, repo.Name)
 		prs := internalgithub.FetchPRs(ctx, client, repo, today, tomorrow)
+		sort.Slice(prs, func(i, j int) bool {
+        return prs[i].IsOpen && !prs[j].IsOpen
+    })
 		for _, pr := range prs {
 			if pr.IsOpen {
 				notifier.NotifyOpenPR(ctx, pr)

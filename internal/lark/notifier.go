@@ -34,13 +34,13 @@ func NewNotifier(cfg *config.Loader, ghClient *github.Client) *Notifier {
 }
 
 func (n *Notifier) NotifyOpenPR(ctx context.Context, pr internalgithub.PullRequest) {
-	emails := mapReviewersToEmails([]string{pr.Author}, n.emailMap)
+	emails := mapReviewersToEmails(pr.AllReviewers, n.emailMap)
 	openIDMap, _ := lark.FetchLarkUserMap(n.tenantToken, emails)
 
 	msg := lark.BuildReminderMessage(
 		[]string{openIDMap[emails[0]]},
 		pr.Author,
-		[]string{pr.Author},
+		pr.AllReviewers,
 		pr.CreatedAt,
 		pr.URL,
 		pr.Repo.Name,

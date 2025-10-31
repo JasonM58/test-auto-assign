@@ -23,6 +23,7 @@ type PullRequest struct {
 	ClosedAt  *time.Time
 	Repo      Repository
 	RawPR     *github.PullRequest
+	AllReviewers    []string
 }
 
 func FetchRepositories(ctx context.Context, client *github.Client) []Repository {
@@ -61,20 +62,61 @@ func FetchPRs(ctx context.Context, client *github.Client, repo Repository, today
 	for _, issue := range all {
 		prDetail, _, err := client.PullRequests.Get(ctx, repo.Owner, repo.Name, issue.GetNumber())
 		if err != nil {
-			log.Printf("⚠️ Failed to fetch PR #%d details: %v", issue.GetNumber(), err)
-			continue
+				log.Printf("⚠️ Failed to fetch PR #%d details: %v", issue.GetNumber(), err)
+				continue
 		}
 
-		isOpen := prDetail.GetClosedAt().IsZero()
+		// Requested users
+		requestedUsers := []string{}
+		for _, user := range prDetail.RequestedReviewers {
+				requestedUsers = append(requestedUsers, user.GetLogin())
+		}
+
+		// Requested teams
+		requestedTeams := []string{}
+		for _, team := range prDetail.RequestedTeams {
+				requestedTeams = append(requestedTeams, team.GetName())
+		}
+
+		// Actual reviewers
+		reviews, _, err := client.PullRequests.ListReviews(ctx, repo.Owner, repo.Name, issue.GetNumber(), nil)
+		if err != nil {
+				log.Printf("⚠️ Failed to list reviews for PR #%d: %v", issue.GetNumber(), err)
+		}
+
+		actualReviewers := make([]string, 0)
+		for _, review := range reviews {
+				if review.User != nil {
+						actualReviewers = append(actualReviewers, review.User.GetLogin())
+				}
+		}
+
+		unique := make(map[string]bool)
+		for _, name := range requestedUsers {
+				unique[name] = true
+		}
+		for _, name := range requestedTeams {
+				unique[name] = true
+		}
+		for _, name := range actualReviewers {
+				unique[name] = true
+		}
+
+		allReviewers := make([]string, 0, len(unique))
+		for name := range unique {
+				allReviewers = append(allReviewers, name)
+		}
+
 		prs = append(prs, PullRequest{
-			Number:    prDetail.GetNumber(),
-			URL:       prDetail.GetHTMLURL(),
-			Author:    prDetail.GetUser().GetLogin(),
-			IsOpen:    isOpen,
-			CreatedAt: prDetail.GetCreatedAt().Time,
-			ClosedAt:  getClosedTime(prDetail),
-			Repo:      repo,
-			RawPR:     prDetail,
+				Number:       prDetail.GetNumber(),
+				URL:          prDetail.GetHTMLURL(),
+				Author:       prDetail.GetUser().GetLogin(),
+				IsOpen:       prDetail.GetClosedAt().IsZero(),
+				CreatedAt:    prDetail.GetCreatedAt().Time,
+				ClosedAt:     getClosedTime(prDetail),
+				Repo:         repo,
+				AllReviewers: allReviewers,
+				RawPR:        prDetail,
 		})
 	}
 	return prs

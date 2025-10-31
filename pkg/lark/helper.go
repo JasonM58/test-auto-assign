@@ -246,6 +246,103 @@ func BuildReminderMessage(openIDs []string, createdBy string, reviewers []string
 	}
 }
 
+// func BuildReminderMessage(openIDs []string, createdBy string, reviewers []string, createdAt time.Time, prURL, repoName string) map[string]interface{} {
+// 	reviewerList := "(no reviewers)"
+// 	if len(reviewers) > 0 {
+// 		reviewerList = fmt.Sprintf("%s", reviewers[0])
+// 		if len(reviewers) > 1 {
+// 			reviewerList += fmt.Sprintf(" and %d others", len(reviewers)-1)
+// 		}
+// 	}
+
+// 	var intro []map[string]interface{}
+// 	intro = append(intro, map[string]interface{}{
+// 		"tag": "text",
+// 		"text": "Hi ",
+// 	})
+// 	for _, id := range openIDs {
+// 		intro = append(intro, map[string]interface{}{
+// 			"tag":     "at",
+// 			"user_id": id,
+// 		})
+// 		intro = append(intro, map[string]interface{}{
+// 			"tag": "text",
+// 			"text": " ",
+// 		})
+// 	}
+// 	intro = append(intro, map[string]interface{}{
+// 		"tag": "text",
+// 		"text": "👋\n\nYou have a pending PR in ",
+// 	})
+// 	intro = append(intro, map[string]interface{}{
+// 		"tag": "text",
+// 		"text": fmt.Sprintf("%s", repoName),
+// 	})
+// 	intro = append(intro, map[string]interface{}{
+// 		"tag": "text",
+// 		"text": " that needs your review.\n\n",
+// 	})
+
+// 	openDuration := time.Since(createdAt)
+// 	openDays := int(openDuration.Hours() / 24)
+
+// 	var warning []map[string]interface{}
+// 	if openDays > 3 {
+// 		warning = []map[string]interface{}{
+// 			{
+// 				"tag":  "text",
+// 				"text": "⚠️ This PR has been open for more than 3 days! Please review it soon.\n\n",
+// 				"style": map[string]interface{}{
+// 					"color": "red",
+// 					"bold":  true,
+// 				},
+// 			},
+// 		}
+// 	}
+
+// 	content := [][]map[string]interface{}{
+// 		intro,
+// 		{
+// 			{
+// 				"tag": "text",
+// 				"text": fmt.Sprintf(
+// 					"Created By: %s\nReviewer(s): %s\nOpened For: %s\n\n",
+// 					createdBy,
+// 					reviewerList,
+// 					FormatDuration(openDuration, false),
+// 				),
+// 			},
+// 		},
+// 	}
+
+// 	// ✅ Insert the red warning (if any) before the link
+// 	if len(warning) > 0 {
+// 		content = append(content, warning)
+// 	}
+
+// 	content = append(content, []map[string]interface{}{
+// 		{
+// 			"tag":  "a",
+// 			"text": "👉 View Pull Request",
+// 			"href": prURL,
+// 		},
+// 	})
+
+// 	// Return final message body
+// 	return map[string]interface{}{
+// 		"msg_type": "post",
+// 		"content": map[string]interface{}{
+// 			"post": map[string]interface{}{
+// 				"en_us": map[string]interface{}{
+// 					"title":   "🔔 Pull Request Reminder",
+// 					"content": content,
+// 				},
+// 			},
+// 		},
+// 	}
+// }
+
+
 func FetchLarkUserMap(tenantAccessToken string, emails []string) (map[string]string, error) {
 	if len(emails) == 0 {
 		return nil, fmt.Errorf("no emails provided")
