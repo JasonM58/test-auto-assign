@@ -1,0 +1,46 @@
+name: staging workflow
+on:
+  push:
+    branches:
+      - main
+      - refactor/dismantle-gophercloud-sdk-use-resty
+    tags: ['*']
+  
+jobs:
+  build_docker_image_staging:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/build_and_push_image.yml
+    with:
+      github_sha: ${{ github.sha }}
+    secrets:
+      SERVICE_NAME: ${{ secrets.SERVICE_NAME }}
+      PROJECT_ID: "${{ secrets.PROJECT_ID }}"
+      SERVICE_ACCOUNT: "${{ secrets.SERVICE_ACCOUNT }}"
+      WORKLOAD_IDENTITY_PROVIDER: "${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}"
+      ARTIFACT_REGISTRY: ${{ secrets.ARTIFACT_REGISTRY }}
+
+  deploy:
+    needs: build_docker_image_staging
+    runs-on: self-hosted
+    steps:
+    - name: Deploy
+      env:
+        API_IMAGE_TAG: ${{ needs.build_docker_image_staging.outputs.image_tag }}
+      run: |
+        echo "$API_IMAGE_TAG"
+        gh workflow run deployment.yaml \
+        --repo ionextai/infrastructure \
+        --ref main \
+        -f environment=staging \
+        -f imageTag=$API_IMAGE_TAG \
+        -f ref=${{ github.ref }} \
+        -f releaseName=git-beacon \
+        -f deploymentType=git-beacon \
+        -f releaseName=git-beacon
+    - name: Check Deployment Progress
+      run: |
+        sleep 10
+        run_id=$(gh run list --repo ionextai/infrastructure --workflow=deployment.yaml --limit=1 --json databaseId --jq '.[0].databaseId')
+        gh run watch $run_id --repo ionextai/infrastructure --exit-status

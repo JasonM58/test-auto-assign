@@ -1,0 +1,45 @@
+name: docker build
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select environment"
+        required: true
+        type: choice
+        options:
+          - production
+          - staging
+
+jobs:
+  # STAGING
+  build_and_push_staging:
+    if: ${{ inputs.environment == 'staging' }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/build_and_push_image.yml
+    with:
+      github_sha: ${{ github.sha }}
+    secrets:
+      SERVICE_NAME: ${{ secrets.SERVICE_NAME }}
+      PROJECT_ID: "${{ secrets.PROJECT_ID }}"
+      SERVICE_ACCOUNT: "${{ secrets.SERVICE_ACCOUNT }}"
+      WORKLOAD_IDENTITY_PROVIDER: "${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}"
+      ARTIFACT_REGISTRY: ${{ secrets.ARTIFACT_REGISTRY }}
+
+  # PRODUCTION
+  build_and_push_production:
+    if: ${{ inputs.environment == 'production' }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/build_and_push_image.yml
+    with:
+      github_sha: ${{ github.sha }}
+    secrets:
+      SERVICE_NAME: ${{ secrets.PROD_SERVICE_NAME }}
+      PROJECT_ID: "${{ secrets.PROJECT_ID }}"
+      SERVICE_ACCOUNT: "${{ secrets.SERVICE_ACCOUNT }}"
+      WORKLOAD_IDENTITY_PROVIDER: "${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}"
+      ARTIFACT_REGISTRY: ${{ secrets.ARTIFACT_REGISTRY }}
