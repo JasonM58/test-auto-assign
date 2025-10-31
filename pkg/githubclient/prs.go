@@ -106,68 +106,6 @@ func GetPRMetrics(ctx context.Context, client *github.Client, owner, repo string
 	return metrics, nil
 }
 
-func ListMergedPRs(ctx context.Context, client *github.Client, owner, repo string, since, until time.Time) ([]*github.Issue, error) {
-	query := fmt.Sprintf(
-		"repo:%s/%s is:pr is:merged merged:%s..%s",
-		owner,
-		repo,
-		since.UTC().Format(time.RFC3339),
-		until.UTC().Format(time.RFC3339),
-	)
-
-	opts := &github.SearchOptions{
-		Sort:        "updated",
-		Order:       "desc",
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-
-	var allPRs []*github.Issue
-
-	for {
-		result, resp, err := client.Search.Issues(ctx, query, opts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to search merged PRs: %w", err)
-		}
-
-		allPRs = append(allPRs, result.Issues...)
-
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
-	}
-
-	return allPRs, nil
-}
-
-func ListOpenPRs(ctx context.Context, client *github.Client, owner, repo string) ([]*github.Issue, error) {
-	query := fmt.Sprintf("repo:%s/%s is:pr is:open", owner, repo)
-
-	opts := &github.SearchOptions{
-		Sort:        "updated",
-		Order:       "desc",
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-
-	var allPRs []*github.Issue
-
-	for {
-		result, resp, err := client.Search.Issues(ctx, query, opts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to search open PRs: %w", err)
-		}
-
-		allPRs = append(allPRs, result.Issues...)
-
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
-	}
-
-	return allPRs, nil
-}
-
 func ListOpenPRsByOrg(ctx context.Context, client *github.Client, org string) ([]*github.Issue, error) {
 	query := fmt.Sprintf("org:%s is:pr is:open", org)
 	return searchIssues(ctx, client, query)
