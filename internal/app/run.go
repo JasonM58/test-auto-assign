@@ -38,7 +38,6 @@ func Run(ctx context.Context, cfg *config.Loader) {
 	})
 
 	for _, pr := range allPRs {
-		fmt.Println(pr.Author, pr.IsOpen)
 		if pr.IsOpen {
 				notifier.NotifyOpenPR(ctx, pr)
 		} else {
