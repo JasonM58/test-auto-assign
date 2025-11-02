@@ -1,0 +1,72 @@
+name: Build and Push Image
+
+on:
+  workflow_call:
+    inputs:
+      GITHUB_SHA:
+        type: string
+    secrets:
+      SERVICE_NAME:
+        required: true
+      PROJECT_ID:
+        required: true
+      SERVICE_ACCOUNT:
+        required: true
+      WORKLOAD_IDENTITY_PROVIDER:
+        required: true
+      ARTIFACT_REGISTRY:
+        required: true 
+    outputs:
+      image_tag:
+        description: "tag for image"
+        value: ${{ jobs.build_and_push.outputs.build_tag }}
+
+jobs:
+  build_and_push:
+    runs-on: self-hosted
+
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      build_tag: ${{ steps.set_tag.outputs.COMMIT_SHORT_SHA }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Authenticate to Google Cloud (Workload Identity)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          token_format: "access_token"
+          project_id: "${{ secrets.PROJECT_ID }}"
+          service_account: "${{ secrets.SERVICE_ACCOUNT }}"
+          workload_identity_provider: "${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}"
+
+      - name: Set up Docker
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ARTIFACT_REGISTRY }}
+          username: "oauth2accesstoken"
+          password: "${{ steps.auth.outputs.access_token }}" # From Workload Identity
+
+      - name: Set short git commit SHA
+        id: set_tag
+        run: |
+          calculatedSha=$(git rev-parse --short ${{ inputs.GITHUB_SHA }})
+          echo "COMMIT_SHORT_SHA=$calculatedSha" >> $GITHUB_ENV
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.ARTIFACT_REGISTRY }}/${{ secrets.PROJECT_ID }}/my-repo/${{ secrets.SERVICE_NAME }}:latest
+            ${{ secrets.ARTIFACT_REGISTRY }}/${{ secrets.PROJECT_ID }}/my-repo/${{ secrets.SERVICE_NAME }}:${{ env.COMMIT_SHORT_SHA }}
