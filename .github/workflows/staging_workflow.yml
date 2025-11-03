@@ -1,10 +1,17 @@
 name: staging workflow
 on:
-  push:
+  pull_request:
     branches:
       - main
       - refactor/dismantle-gophercloud-sdk-use-resty
-    tags: ['*']
+    types: [opened, reopened, synchronize]
+
+# on:
+#   push:
+#     branches:
+#       - main
+#       - refactor/dismantle-gophercloud-sdk-use-resty
+#     tags: ['*']
   
 jobs:
   build_docker_image_staging:
