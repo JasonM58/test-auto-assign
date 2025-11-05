@@ -39,8 +39,6 @@ jobs:
         IMAGE_TAG: ${{ needs.build_docker_image_staging.outputs.image_tag }}
       run: |
         echo "$IMAGE_TAG"
-        echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-        echo "Pushing image with tag $IMAGE_TAG"
         gh workflow run deployment.yaml \
         --repo ionextai/infrastructure \
         --ref main \
