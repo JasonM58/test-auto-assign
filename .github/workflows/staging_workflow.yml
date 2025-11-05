@@ -20,7 +20,7 @@ jobs:
       id-token: write
     uses: ./.github/workflows/build_and_push_image.yml
     with:
-      github_sha: ${{ github.sha }}
+      GITHUB_SHA: ${{ github.sha }}
     secrets:
       SERVICE_NAME: ${{ secrets.SERVICE_NAME }}
       PROJECT_ID: "${{ secrets.PROJECT_ID }}"
