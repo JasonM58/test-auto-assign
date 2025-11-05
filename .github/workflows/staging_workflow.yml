@@ -32,7 +32,7 @@ jobs:
     needs: build_docker_image_staging
     runs-on: self-hosted
     env:
-      GH_TOKEN: ${{ secrets.PAT }} 
+      GITHUB_TOKEN: ${{ secrets.PAT }} 
     steps:
     - name: Deploy
       env:
