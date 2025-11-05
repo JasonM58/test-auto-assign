@@ -31,10 +31,11 @@ jobs:
   deploy:
     needs: build_docker_image_staging
     runs-on: self-hosted
+    env:
+      GH_TOKEN: ${{ secrets.PAT }} 
     steps:
     - name: Deploy
       env:
-        GH_TOKEN: ${{ github.token }}
         API_IMAGE_TAG: ${{ needs.build_docker_image_staging.outputs.image_tag }}
       run: |
         echo "$API_IMAGE_TAG"
