@@ -45,7 +45,6 @@ jobs:
         -f environment=staging \
         -f imageTag=$API_IMAGE_TAG \
         -f ref=${{ github.ref }} \
-        -f releaseName=git-beacon \
         -f deploymentType=git-beacon \
         -f releaseName=git-beacon
     - name: Check Deployment Progress
