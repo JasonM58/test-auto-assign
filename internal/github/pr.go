@@ -44,7 +44,7 @@ func FetchRepositories(ctx context.Context, client *github.Client) []Repository 
 func FetchPRs(ctx context.Context, client *github.Client, repo Repository, today, tomorrow time.Time) []PullRequest {
 	mergedIssues, err := githubclient.ListMergedPRs(ctx, client, repo.Owner, repo.Name, today, tomorrow)
 	if err != nil {
-		log.Printf("⚠️ Failed to list merged PRs: %v", err)
+		log.Printf("⚠️ Failed to list merged PRs : %v", err)
 	}
 
 	openIssues, err := githubclient.ListOpenPRs(ctx, client, repo.Owner, repo.Name)
