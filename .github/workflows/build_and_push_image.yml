@@ -38,6 +38,13 @@ jobs:
         with:
           ref: ${{ inputs.GITHUB_SHA }}
 
+      - name: Debug SHA
+        id: debug_sha
+        run: |
+          echo "Expected SHA: ${{ inputs.GITHUB_SHA }}"
+          echo "Checked-out SHA: $(git rev-parse HEAD)"
+
+
       - name: Authenticate to Google Cloud (Workload Identity)
         id: auth
         uses: google-github-actions/auth@v2
