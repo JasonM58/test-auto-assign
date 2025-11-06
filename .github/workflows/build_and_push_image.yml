@@ -3,7 +3,7 @@ name: Build and Push Image
 on:
   workflow_call:
     inputs:
-      github_sha:
+      GITHUB_SHA:
         required: true
         type: string
     secrets:
@@ -61,7 +61,7 @@ jobs:
       - name: Set short git commit SHA
         id: set_tag
         run: |
-          calculatedSha=$(git rev-parse --short ${{ inputs.github_sha }})
+          calculatedSha=$(git rev-parse --short ${{ inputs.GITHUB_SHA }})
           echo "COMMIT_SHORT_SHA=$calculatedSha" >> $GITHUB_OUTPUT
 
       - name: Build and Push Docker Image
