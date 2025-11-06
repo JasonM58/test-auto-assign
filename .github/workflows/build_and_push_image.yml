@@ -70,5 +70,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ secrets.ARTIFACT_REGISTRY }}/${{ secrets.PROJECT_ID }}/my-repo/${{ secrets.SERVICE_NAME }}:latest
+            ${{ secrets.ARTIFACT_REGISTRY }}/${{ secrets.PROJECT_ID }}/my-repo/${{ secrets.SERVICE_NAME }}:v1.0.6
             ${{ secrets.ARTIFACT_REGISTRY }}/${{ secrets.PROJECT_ID }}/my-repo/${{ secrets.SERVICE_NAME }}:${{ steps.set_tag.outputs.COMMIT_SHORT_SHA }}
