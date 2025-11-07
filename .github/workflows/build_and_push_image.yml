@@ -41,7 +41,7 @@ jobs:
         run: |
           echo "Expected SHA: ${{ inputs.GITHUB_SHA }}"
           echo "Checked-out SHA: $(git rev-parse HEAD)"
-
+          ls -la .
 
       - name: Authenticate to Google Cloud (Workload Identity)
         id: auth
