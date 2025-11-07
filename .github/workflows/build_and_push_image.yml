@@ -35,8 +35,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.GITHUB_SHA }}
 
       - name: Debug SHA
         id: debug_sha
