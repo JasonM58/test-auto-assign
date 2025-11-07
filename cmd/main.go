@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 
 	"github.com/ionextai/git-beacon/internal/app"
@@ -10,6 +11,7 @@ import (
 )
 
 func main() {
+	fmt.Println("ini terbaru")
 	cfgPath := flag.String("config", "env.yaml", "Path to configuration file")
 	flag.Parse()
 
