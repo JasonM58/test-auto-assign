@@ -3,6 +3,7 @@ package githubclient
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/go-github/v61/github"
@@ -105,66 +106,19 @@ func GetPRMetrics(ctx context.Context, client *github.Client, owner, repo string
 	return metrics, nil
 }
 
-func ListMergedPRs(ctx context.Context, client *github.Client, owner, repo string, since, until time.Time) ([]*github.Issue, error) {
-	query := fmt.Sprintf(
-		"repo:%s/%s is:pr is:merged merged:%s..%s",
-		owner,
-		repo,
-		since.UTC().Format(time.RFC3339),
-		until.UTC().Format(time.RFC3339),
-	)
-
-	opts := &github.SearchOptions{
-		Sort:        "updated",
-		Order:       "desc",
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-
-	var allPRs []*github.Issue
-
-	for {
-		result, resp, err := client.Search.Issues(ctx, query, opts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to search merged PRs: %w", err)
-		}
-
-		allPRs = append(allPRs, result.Issues...)
-
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
-	}
-
-	return allPRs, nil
+func ListOpenPRsByOrg(ctx context.Context, client *github.Client, org string) ([]*github.Issue, error) {
+	query := fmt.Sprintf("org:%s is:pr is:open", org)
+	return searchIssues(ctx, client, query)
 }
 
-func ListOpenPRs(ctx context.Context, client *github.Client, owner, repo string) ([]*github.Issue, error) {
-	query := fmt.Sprintf("repo:%s/%s is:pr is:open", owner, repo)
-
-	opts := &github.SearchOptions{
-		Sort:        "updated",
-		Order:       "desc",
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-
-	var allPRs []*github.Issue
-
-	for {
-		result, resp, err := client.Search.Issues(ctx, query, opts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to search open PRs: %w", err)
-		}
-
-		allPRs = append(allPRs, result.Issues...)
-
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
-	}
-
-	return allPRs, nil
+func ListMergedPRsByOrg(ctx context.Context, client *github.Client, org string, since, until time.Time) ([]*github.Issue, error) {
+	query := fmt.Sprintf(
+		"org:%s is:pr is:merged merged:%s..%s",
+		org,
+		since.UTC().Format("2006-01-02"),
+		until.UTC().Format("2006-01-02"),
+	)
+	return searchIssues(ctx, client, query)
 }
 
 func categorizePRSize(pr *github.PullRequest) string {
@@ -202,4 +156,32 @@ func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics) error {
 	prDurationGauge.Record(ctx, m.TimeToMerge.Seconds(), metric.WithAttributes(attrs...))
 
 	return nil
+}
+
+func searchIssues(ctx context.Context, client *github.Client, query string) ([]*github.Issue, error) {
+	opts := &github.SearchOptions{
+		Sort:        "updated",
+		Order:       "desc",
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+
+	var all []*github.Issue
+	for {
+		result, resp, err := client.Search.Issues(ctx, query, opts)
+		if err != nil {
+			if resp != nil && resp.Rate.Remaining == 0 {
+				wait := time.Until(resp.Rate.Reset.Time)
+				log.Printf("⚠️ Rate limit hit. Waiting %v...", wait)
+				time.Sleep(wait + time.Second)
+				continue
+			}
+			return nil, err
+		}
+		all = append(all, result.Issues...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return all, nil
 }

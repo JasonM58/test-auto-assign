@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	fmt.Println("ini terbaru")
+	fmt.Println("ini terbaru 2")
 	cfgPath := flag.String("config", "env.yaml", "Path to configuration file")
 	flag.Parse()
 
