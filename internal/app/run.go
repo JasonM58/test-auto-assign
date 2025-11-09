@@ -26,7 +26,7 @@ func Run(ctx context.Context, cfg *config.Loader) {
 	notifier := internallark.NewNotifier(cfg, client)
 
 	org := "ionextai"
-	fmt.Printf("🏢 Fetching all PRs in org")
+	fmt.Println("🏢 Fetching all PRs in org")
 
 	allPRs := internalgithub.FetchPRsByOrg(ctx, client, org, today, tomorrow)
 
