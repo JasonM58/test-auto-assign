@@ -16,41 +16,53 @@ type Repository struct {
 }
 
 type PullRequest struct {
-	Number    int
-	URL       string
-	Author    string
-	IsOpen    bool
-	CreatedAt time.Time
-	ClosedAt  *time.Time
-	Repo      Repository
-	RawPR     *github.PullRequest
-	AllReviewers    []string
+	Number       int
+	URL          string
+	Author       string
+	IsOpen       bool
+	CreatedAt    time.Time
+	ClosedAt     *time.Time
+	Repo         Repository
+	RawPR        *github.PullRequest
+	AllReviewers []string
 }
 
-func getUniqueReviewers(prDetail *github.PullRequest, requestedUsers, requestedTeams, actualReviewers []string) []string {
-    unique := make(map[string]bool)
+func getUniqueReviewers(ctx context.Context, client *github.Client, prDetail *github.PullRequest) []string {
+	requestedUsers := make([]string, 0, len(prDetail.RequestedReviewers))
+	for _, user := range prDetail.RequestedReviewers {
+		requestedUsers = append(requestedUsers, user.GetLogin())
+	}
 
-    // Collect all names
-    for _, n := range requestedUsers {
-        unique[n] = true
-    }
-    for _, n := range requestedTeams {
-        unique[n] = true
-    }
-    for _, n := range actualReviewers {
-        unique[n] = true
-    }
+	requestedTeams := make([]string, 0, len(prDetail.RequestedTeams))
+	for _, team := range prDetail.RequestedTeams {
+		requestedTeams = append(requestedTeams, team.GetName())
+	}
 
-    // Build final list, excluding PR author
-    allReviewers := make([]string, 0, len(unique))
-    for n := range unique {
-        if n == prDetail.GetUser().GetLogin() {
-            continue
-        }
-        allReviewers = append(allReviewers, n)
-    }
+	owner := prDetail.GetBase().GetRepo().GetOwner().GetLogin()
+	repoName := prDetail.GetBase().GetRepo().GetName()
+	reviews, _, _ := client.PullRequests.ListReviews(ctx, owner, repoName, prDetail.GetNumber(), nil)
 
-    return allReviewers
+	actualReviewers := make([]string, 0, len(reviews))
+	for _, review := range reviews {
+		if review.User != nil {
+			actualReviewers = append(actualReviewers, review.User.GetLogin())
+		}
+	}
+
+	unique := make(map[string]bool)
+	for _, n := range append(append(requestedUsers, requestedTeams...), actualReviewers...) {
+		unique[n] = true
+	}
+
+	allReviewers := make([]string, 0, len(unique))
+	for n := range unique {
+		if n == prDetail.GetUser().GetLogin() {
+			continue
+		}
+		allReviewers = append(allReviewers, n)
+	}
+
+	return allReviewers
 }
 
 func FetchPRsByOrg(ctx context.Context, client *github.Client, org string, today, tomorrow time.Time) []PullRequest {
@@ -65,61 +77,48 @@ func FetchPRsByOrg(ctx context.Context, client *github.Client, org string, today
 	}
 
 	all := append(mergedIssues, openIssues...)
-	var prs []PullRequest
+	prs := make([]PullRequest, 0, len(all))
 
 	for _, issue := range all {
 		repoURL := issue.GetRepositoryURL()
 		parts := strings.Split(repoURL, "/")
 		if len(parts) < 2 {
-				continue
+			continue
 		}
 		owner := parts[len(parts)-2]
 		repoName := parts[len(parts)-1]
 
 		prDetail, _, err := client.PullRequests.Get(ctx, owner, repoName, issue.GetNumber())
 		if err != nil {
-				if _, ok := err.(*github.RateLimitError); ok {
-						limits, _, _ := client.RateLimit.Get(ctx)
-						if limits != nil && limits.Core != nil {
-								reset := time.Until(limits.Core.Reset.Time)
-								log.Printf("Rate limit hit, sleeping for %v...", reset)
-								time.Sleep(reset + time.Second)
-								continue
-						}
+			if _, ok := err.(*github.RateLimitError); ok {
+				limits, _, _ := client.RateLimit.Get(ctx)
+				if limits != nil && limits.Core != nil {
+					reset := time.Until(limits.Core.Reset.Time)
+					log.Printf("Rate limit hit, sleeping for %v...", reset)
+					time.Sleep(reset + time.Second)
+					continue
 				}
-				log.Printf("Failed to fetch PR #%d (%s/%s): %v", issue.GetNumber(), owner, repoName, err)
-				continue
+			}
+			log.Printf("Failed to fetch PR #%d (%s/%s): %v", issue.GetNumber(), owner, repoName, err)
+			continue
 		}
 
-		requestedUsers := make([]string, 0, len(prDetail.RequestedReviewers))
-		for _, user := range prDetail.RequestedReviewers {
-				requestedUsers = append(requestedUsers, user.GetLogin())
+		if prDetail.GetDraft(){
+			continue
 		}
 
-		requestedTeams := make([]string, 0, len(prDetail.RequestedTeams))
-		for _, team := range prDetail.RequestedTeams {
-				requestedTeams = append(requestedTeams, team.GetName())
-		}
+		allReviewers := getUniqueReviewers(ctx, client, prDetail)
 
-		reviews, _, _ := client.PullRequests.ListReviews(ctx, owner, repoName, issue.GetNumber(), nil)
-		actualReviewers := make([]string, 0)
-		for _, review := range reviews {
-				if review.User != nil {
-						actualReviewers = append(actualReviewers, review.User.GetLogin())
-				}
-		}
-
-		allReviewers := getUniqueReviewers(prDetail, requestedUsers, requestedTeams, actualReviewers)
 		prs = append(prs, PullRequest{
-				Number:       prDetail.GetNumber(),
-				URL:          prDetail.GetHTMLURL(),
-				Author:       prDetail.GetUser().GetLogin(),
-				IsOpen:       prDetail.GetClosedAt().IsZero(),
-				CreatedAt:    prDetail.GetCreatedAt().Time,
-				ClosedAt:     getClosedTime(prDetail),
-				Repo:         Repository{Owner: owner, Name: repoName},
-				AllReviewers: allReviewers,
-				RawPR:        prDetail,
+			Number:       prDetail.GetNumber(),
+			URL:          prDetail.GetHTMLURL(),
+			Author:       prDetail.GetUser().GetLogin(),
+			IsOpen:       prDetail.GetClosedAt().IsZero(),
+			CreatedAt:    prDetail.GetCreatedAt().Time,
+			ClosedAt:     getClosedTime(prDetail),
+			Repo:         Repository{Owner: owner, Name: repoName},
+			AllReviewers: allReviewers,
+			RawPR:        prDetail,
 		})
 	}
 

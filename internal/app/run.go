@@ -29,18 +29,18 @@ func Run(ctx context.Context, cfg *config.Loader) {
 	allPRs := internalgithub.FetchPRsByOrg(ctx, client, org, today, tomorrow)
 
 	sort.Slice(allPRs, func(i, j int) bool {
-			if allPRs[i].IsOpen != allPRs[j].IsOpen {
-					return allPRs[i].IsOpen && !allPRs[j].IsOpen
-			}
-			return allPRs[i].CreatedAt.After(allPRs[j].CreatedAt)
+		if allPRs[i].IsOpen != allPRs[j].IsOpen {
+			return allPRs[i].IsOpen && !allPRs[j].IsOpen
+		}
+		return allPRs[i].CreatedAt.After(allPRs[j].CreatedAt)
 	})
 
 	for _, pr := range allPRs {
 		if pr.IsOpen {
-				notifier.NotifyOpenPR(ctx, pr)
+			notifier.NotifyOpenPR(ctx, pr)
 		} else {
-				notifier.NotifyMergedPR(ctx, pr)
-				internalgithub.SendMetrics(ctx, client, pr)
+			notifier.NotifyMergedPR(ctx, pr)
+			internalgithub.SendMetrics(ctx, client, pr)
 		}
 	}
 }
