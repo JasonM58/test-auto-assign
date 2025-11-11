@@ -4,6 +4,7 @@ on:
   workflow_call:
     inputs:
       GITHUB_SHA:
+        required: true
         type: string
     secrets:
       SERVICE_NAME:
@@ -15,25 +16,32 @@ on:
       WORKLOAD_IDENTITY_PROVIDER:
         required: true
       ARTIFACT_REGISTRY:
-        required: true 
+        required: true
     outputs:
       image_tag:
-        description: "tag for image"
+        description: "Tag for image"
         value: ${{ jobs.build_and_push.outputs.build_tag }}
 
 jobs:
   build_and_push:
     runs-on: self-hosted
-
     permissions:
       contents: read
       id-token: write
+
     outputs:
       build_tag: ${{ steps.set_tag.outputs.COMMIT_SHORT_SHA }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Debug SHA
+        id: debug_sha
+        run: |
+          echo "Expected SHA: ${{ inputs.GITHUB_SHA }}"
+          git status
+
       - name: Authenticate to Google Cloud (Workload Identity)
         id: auth
         uses: google-github-actions/auth@v2
@@ -54,13 +62,13 @@ jobs:
         with:
           registry: ${{ secrets.ARTIFACT_REGISTRY }}
           username: "oauth2accesstoken"
-          password: "${{ steps.auth.outputs.access_token }}" # From Workload Identity
+          password: "${{ steps.auth.outputs.access_token }}"
 
       - name: Set short git commit SHA
         id: set_tag
         run: |
           calculatedSha=$(git rev-parse --short ${{ inputs.GITHUB_SHA }})
-          echo "COMMIT_SHORT_SHA=$calculatedSha" >> $GITHUB_ENV
+          echo "COMMIT_SHORT_SHA=$calculatedSha" >> $GITHUB_OUTPUT
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
@@ -69,4 +77,4 @@ jobs:
           push: true
           tags: |
             ${{ secrets.ARTIFACT_REGISTRY }}/${{ secrets.PROJECT_ID }}/my-repo/${{ secrets.SERVICE_NAME }}:latest
-            ${{ secrets.ARTIFACT_REGISTRY }}/${{ secrets.PROJECT_ID }}/my-repo/${{ secrets.SERVICE_NAME }}:${{ env.COMMIT_SHORT_SHA }}
+            ${{ secrets.ARTIFACT_REGISTRY }}/${{ secrets.PROJECT_ID }}/my-repo/${{ secrets.SERVICE_NAME }}:${{ steps.set_tag.outputs.COMMIT_SHORT_SHA }}

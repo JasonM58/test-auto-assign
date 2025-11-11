@@ -1,9 +1,8 @@
 name: staging workflow
+
 on:
   push:
-    branches:
-      - main
-      - refactor/dismantle-gophercloud-sdk-use-resty
+    branches: [main]
     tags: ['*']
   
 jobs:
@@ -13,7 +12,7 @@ jobs:
       id-token: write
     uses: ./.github/workflows/build_and_push_image.yml
     with:
-      github_sha: ${{ github.sha }}
+      GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
     secrets:
       SERVICE_NAME: ${{ secrets.SERVICE_NAME }}
       PROJECT_ID: "${{ secrets.PROJECT_ID }}"
@@ -24,21 +23,22 @@ jobs:
   deploy:
     needs: build_docker_image_staging
     runs-on: self-hosted
+    env:
+      GITHUB_TOKEN: ${{ secrets.PAT }} 
     steps:
     - name: Deploy
       env:
-        API_IMAGE_TAG: ${{ needs.build_docker_image_staging.outputs.image_tag }}
+        IMAGE_TAG: ${{ needs.build_docker_image_staging.outputs.image_tag }}
       run: |
-        echo "$API_IMAGE_TAG"
+        echo "$IMAGE_TAG"
         gh workflow run deployment.yaml \
         --repo ionextai/infrastructure \
         --ref main \
         -f environment=staging \
-        -f imageTag=$API_IMAGE_TAG \
+        -f imageTag=$IMAGE_TAG \
         -f ref=${{ github.ref }} \
         -f releaseName=git-beacon \
-        -f deploymentType=git-beacon \
-        -f releaseName=git-beacon
+        -f deploymentType=git-beacon
     - name: Check Deployment Progress
       run: |
         sleep 10
