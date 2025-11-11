@@ -1,18 +1,11 @@
 name: staging workflow
 
 on:
-  pull_request:
+  push:
     branches:
       - main
       - refactor/dismantle-gophercloud-sdk-use-resty
-    types: [opened, reopened, synchronize]
-
-# on:
-#   push:
-#     branches:
-#       - main
-#       - refactor/dismantle-gophercloud-sdk-use-resty
-#     tags: ['*']
+    tags: ['*']
   
 jobs:
   build_docker_image_staging:
@@ -21,7 +14,6 @@ jobs:
       id-token: write
     uses: ./.github/workflows/build_and_push_image.yml
     with:
-      # GITHUB_SHA: ${{ github.sha }}
       GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
     secrets:
       SERVICE_NAME: ${{ secrets.SERVICE_NAME }}

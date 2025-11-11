@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"time"
 
@@ -26,7 +25,6 @@ func Run(ctx context.Context, cfg *config.Loader) {
 	notifier := internallark.NewNotifier(cfg, client)
 
 	org := "ionextai"
-	fmt.Println("🏢 Fetching all PRs in org")
 
 	allPRs := internalgithub.FetchPRsByOrg(ctx, client, org, today, tomorrow)
 
@@ -45,6 +43,4 @@ func Run(ctx context.Context, cfg *config.Loader) {
 				internalgithub.SendMetrics(ctx, client, pr)
 		}
 	}
-
-	fmt.Println("Finish Sending Message")
 }

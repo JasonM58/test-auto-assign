@@ -27,6 +27,32 @@ type PullRequest struct {
 	AllReviewers    []string
 }
 
+func getUniqueReviewers(prDetail *github.PullRequest, requestedUsers, requestedTeams, actualReviewers []string) []string {
+    unique := make(map[string]bool)
+
+    // Collect all names
+    for _, n := range requestedUsers {
+        unique[n] = true
+    }
+    for _, n := range requestedTeams {
+        unique[n] = true
+    }
+    for _, n := range actualReviewers {
+        unique[n] = true
+    }
+
+    // Build final list, excluding PR author
+    allReviewers := make([]string, 0, len(unique))
+    for n := range unique {
+        if n == prDetail.GetUser().GetLogin() {
+            continue
+        }
+        allReviewers = append(allReviewers, n)
+    }
+
+    return allReviewers
+}
+
 func FetchPRsByOrg(ctx context.Context, client *github.Client, org string, today, tomorrow time.Time) []PullRequest {
 	openIssues, err := githubclient.ListOpenPRsByOrg(ctx, client, org)
 	if err != nil {
@@ -65,12 +91,12 @@ func FetchPRsByOrg(ctx context.Context, client *github.Client, org string, today
 				continue
 		}
 
-		requestedUsers := []string{}
+		requestedUsers := make([]string, 0, len(prDetail.RequestedReviewers))
 		for _, user := range prDetail.RequestedReviewers {
 				requestedUsers = append(requestedUsers, user.GetLogin())
 		}
 
-		requestedTeams := []string{}
+		requestedTeams := make([]string, 0, len(prDetail.RequestedTeams))
 		for _, team := range prDetail.RequestedTeams {
 				requestedTeams = append(requestedTeams, team.GetName())
 		}
@@ -83,25 +109,7 @@ func FetchPRsByOrg(ctx context.Context, client *github.Client, org string, today
 				}
 		}
 
-		unique := make(map[string]bool)
-		for _, n := range requestedUsers {
-				unique[n] = true
-		}
-		for _, n := range requestedTeams {
-				unique[n] = true
-		}
-		for _, n := range actualReviewers {
-				unique[n] = true
-		}
-
-		allReviewers := make([]string, 0, len(unique))
-		for n := range unique {
-				if n == prDetail.GetUser().GetLogin() {
-						continue
-				}
-				allReviewers = append(allReviewers, n)
-		}
-
+		allReviewers := getUniqueReviewers(prDetail, requestedUsers, requestedTeams, actualReviewers)
 		prs = append(prs, PullRequest{
 				Number:       prDetail.GetNumber(),
 				URL:          prDetail.GetHTMLURL(),
@@ -124,13 +132,15 @@ func FetchRepositories(ctx context.Context, client *github.Client) []Repository 
 		log.Fatalf("❌ Failed to list installation repos: %v", err)
 	}
 
-	var list []Repository
+	list := make([]Repository, 0, len(repos.Repositories))
+
 	for _, r := range repos.Repositories {
 		list = append(list, Repository{
 			Owner: r.GetOwner().GetLogin(),
 			Name:  r.GetName(),
 		})
 	}
+
 	return list
 }
 
