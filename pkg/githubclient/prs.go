@@ -166,7 +166,7 @@ func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, client *github.Clien
 	prApproveToMergeTime.Record(ctx, m.TimeFromApprovalToMerge.Seconds(), metric.WithAttributes(attrs...))
 	prReviewIterations.Record(ctx, int64(m.ReviewIterations), metric.WithAttributes(attrs...))
 	prAprovalTime.Record(ctx, m.TimeToApproval.Seconds(), metric.WithAttributes(attrs...))
-	emitPRCountMetrics(ctx, prCount)
+	emitPRCountMetrics(ctx, prCount, m)
 
 	return nil
 }
@@ -272,7 +272,7 @@ func countPRsByOrgWithRepo(ctx context.Context, client *github.Client, org strin
 	return result, nil
 }
 
-func emitPRCountMetrics(ctx context.Context, counts map[string]map[string]int) {
+func emitPRCountMetrics(ctx context.Context, counts map[string]map[string]int, m *PRMetrics) {
 	meter := otel.GetMeterProvider().Meter("github-metrics")
 
 	prCountGauge, _ := meter.Int64Gauge("pr_count")
@@ -285,6 +285,8 @@ func emitPRCountMetrics(ctx context.Context, counts map[string]map[string]int) {
 				metric.WithAttributes(
 					attribute.String("repo", repo),
 					attribute.String("merge_status", status),
+					attribute.String("author", m.CreatedBy),
+					attribute.String("size_category", m.SizeCategory),
 				),
 			)
 		}
