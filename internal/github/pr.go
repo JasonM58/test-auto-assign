@@ -103,7 +103,7 @@ func FetchPRsByOrg(ctx context.Context, client *github.Client, org string, today
 			continue
 		}
 
-		if prDetail.GetDraft(){
+		if prDetail.GetDraft() {
 			continue
 		}
 
@@ -158,5 +158,5 @@ func SendMetrics(ctx context.Context, client *github.Client, pr PullRequest) {
 		return
 	}
 
-	githubclient.SendPRMetricsToOTel(ctx, metrics)
+	githubclient.SendPRMetricsToOTel(ctx, metrics, client)
 }

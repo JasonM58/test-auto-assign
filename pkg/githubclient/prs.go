@@ -136,13 +136,21 @@ func categorizePRSize(pr *github.PullRequest) string {
 	}
 }
 
-func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics) error {
+func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, client *github.Client) error {
 	meter := otel.GetMeterProvider().Meter("github-metrics")
 
 	prAddCounter, _ := meter.Int64Counter("pr_additions_total")
 	prDelCounter, _ := meter.Int64Counter("pr_deletions_total")
 	prLOCChangedGauge, _ := meter.Int64Gauge("pr_loc_changed")
 	prDurationGauge, _ := meter.Float64Gauge("pr_time_to_merge_seconds")
+	prFirstTimeToReview, _ := meter.Float64Gauge("pr_time_to_first_review_seconds")
+	prApproveToMergeTime, _ := meter.Float64Gauge("pr_time_from_approval_to_merge_seconds")
+	prReviewIterations, _ := meter.Int64Gauge("pr_review_iterations")
+	prAprovalTime, _ := meter.Float64Gauge("pr_time_to_approval_seconds")
+	prCount, err := countPRsByOrgWithRepo(ctx, client, Organization)
+	if err != nil {
+		log.Printf("Failed to get PR counts: %v", err)
+	}
 
 	attrs := []attribute.KeyValue{
 		attribute.String("repo", m.RepoName),
@@ -154,6 +162,11 @@ func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics) error {
 	prDelCounter.Add(ctx, int64(m.Deletions), metric.WithAttributes(attrs...))
 	prLOCChangedGauge.Record(ctx, int64(m.LOCChanged), metric.WithAttributes(attrs...))
 	prDurationGauge.Record(ctx, m.TimeToMerge.Seconds(), metric.WithAttributes(attrs...))
+	prFirstTimeToReview.Record(ctx, m.TimeToFirstReview.Seconds(), metric.WithAttributes(attrs...))
+	prApproveToMergeTime.Record(ctx, m.TimeFromApprovalToMerge.Seconds(), metric.WithAttributes(attrs...))
+	prReviewIterations.Record(ctx, int64(m.ReviewIterations), metric.WithAttributes(attrs...))
+	prAprovalTime.Record(ctx, m.TimeToApproval.Seconds(), metric.WithAttributes(attrs...))
+	emitPRCountMetrics(ctx, prCount)
 
 	return nil
 }
@@ -184,4 +197,96 @@ func searchIssues(ctx context.Context, client *github.Client, query string) ([]*
 		opts.Page = resp.NextPage
 	}
 	return all, nil
+}
+
+func countPRsByOrgWithRepo(ctx context.Context, client *github.Client, org string) (map[string]map[string]int, error) {
+	result := make(map[string]map[string]int)
+
+	opts := &github.RepositoryListByOrgOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+
+	var allRepos []*github.Repository
+	for {
+		repos, resp, err := client.Repositories.ListByOrg(ctx, org, opts)
+		if err != nil {
+			return nil, err
+		}
+		allRepos = append(allRepos, repos...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	for _, repo := range allRepos {
+		name := repo.GetName()
+		result[name] = map[string]int{
+			"open":   0,
+			"merged": 0,
+		}
+
+		openOpts := &github.PullRequestListOptions{
+			State:       "open",
+			ListOptions: github.ListOptions{PerPage: 1},
+		}
+		_, resp, err := client.PullRequests.List(ctx, org, name, openOpts)
+		if err != nil {
+			log.Printf("Warning: failed to count open PRs for %s: %v", name, err)
+			continue
+		}
+		if resp.LastPage > 0 {
+			result[name]["open"] = resp.LastPage * openOpts.PerPage
+		} else if len(resp.Header["Link"]) == 0 {
+			prs, _, _ := client.PullRequests.List(ctx, org, name, openOpts)
+			result[name]["open"] = len(prs)
+		}
+
+		closedOpts := &github.PullRequestListOptions{
+			State:       "closed",
+			ListOptions: github.ListOptions{PerPage: 100},
+		}
+
+		mergedCount := 0
+		for {
+			prs, resp, err := client.PullRequests.List(ctx, org, name, closedOpts)
+			if err != nil {
+				log.Printf("Warning: failed to count merged PRs for %s: %v", name, err)
+				break
+			}
+
+			for _, pr := range prs {
+				if pr.MergedAt != nil {
+					mergedCount++
+				}
+			}
+
+			if resp.NextPage == 0 {
+				break
+			}
+			closedOpts.Page = resp.NextPage
+		}
+		result[name]["merged"] = mergedCount
+	}
+
+	return result, nil
+}
+
+func emitPRCountMetrics(ctx context.Context, counts map[string]map[string]int) {
+	meter := otel.GetMeterProvider().Meter("github-metrics")
+
+	prCountGauge, _ := meter.Int64Gauge("pr_count")
+
+	for repo, statusMap := range counts {
+		for status, count := range statusMap {
+			prCountGauge.Record(
+				ctx,
+				int64(count),
+				metric.WithAttributes(
+					attribute.String("repo", repo),
+					attribute.String("merge_status", status),
+				),
+			)
+		}
+	}
 }
