@@ -151,12 +151,12 @@ func getClosedTime(pr *github.PullRequest) *time.Time {
 	return &t
 }
 
-func SendMetrics(ctx context.Context, client *github.Client, pr PullRequest) {
+func SendMetrics(ctx context.Context, client *github.Client, pr PullRequest, prCounts map[string]map[string]int) {
 	metrics, err := githubclient.GetPRMetrics(ctx, client, pr.Repo.Owner, pr.Repo.Name, pr.RawPR)
 	if err != nil {
 		log.Printf("❌ Failed to calculate metrics for PR #%d: %v", pr.Number, err)
 		return
 	}
 
-	githubclient.SendPRMetricsToOTel(ctx, metrics, client)
+	githubclient.SendPRMetricsToOTel(ctx, metrics, prCounts)
 }

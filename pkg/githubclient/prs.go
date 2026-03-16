@@ -23,9 +23,10 @@ type PRMetrics struct {
 	TimeToMerge             time.Duration
 	TimeFromApprovalToMerge time.Duration
 	ReviewIterations        int
-	SizeCategory            string `json:"size_category"`
-	PRUrl                   string `json:"pr_url"`
-	CreatedBy               string `json:"created_by"`
+	SizeCategory            string   `json:"size_category"`
+	PRUrl                   string   `json:"pr_url"`
+	CreatedBy               string   `json:"created_by"`
+	Reviewers               []string `json:"reviewers"`
 	Additions               int
 	Deletions               int
 	ChangedFiles            int
@@ -33,6 +34,20 @@ type PRMetrics struct {
 }
 
 func GetPRMetrics(ctx context.Context, client *github.Client, owner, repo string, pr *github.PullRequest) (*PRMetrics, error) {
+	uniqueReviewers := make(map[string]bool)
+	prAuthor := pr.GetUser().GetLogin()
+
+	for _, r := range pr.RequestedReviewers {
+
+		login := r.GetLogin()
+
+		if login == "" || login == prAuthor {
+			continue
+		}
+
+		uniqueReviewers[login] = true
+	}
+
 	prNumber := pr.GetNumber()
 	createdAt := pr.GetCreatedAt()
 	mergedAt := pr.GetMergedAt()
@@ -50,6 +65,10 @@ func GetPRMetrics(ctx context.Context, client *github.Client, owner, repo string
 	)
 
 	for _, review := range reviews {
+		if review.User != nil && review.User.GetLogin() != prAuthor {
+			uniqueReviewers[review.User.GetLogin()] = true
+		}
+
 		submittedAt := review.SubmittedAt.Time
 
 		if review.GetState() == "COMMENTED" || review.GetState() == "CHANGES_REQUESTED" || review.GetState() == "APPROVED" {
@@ -67,8 +86,11 @@ func GetPRMetrics(ctx context.Context, client *github.Client, owner, repo string
 		}
 	}
 
-	timeToMerge := mergedAt.Sub(createdAt.Time)
-	var timeToFirstReview, timeToApproval, timeFromApprovalToMerge time.Duration
+	var timeToMerge, timeToFirstReview, timeToApproval, timeFromApprovalToMerge time.Duration
+
+	if !mergedAt.IsZero() {
+		timeToMerge = mergedAt.Sub(createdAt.Time)
+	}
 
 	if firstReviewTime != nil {
 		timeToFirstReview = firstReviewTime.Sub(createdAt.Time)
@@ -82,6 +104,11 @@ func GetPRMetrics(ctx context.Context, client *github.Client, owner, repo string
 
 	sizeCategory := categorizePRSize(pr)
 	locChanged := pr.GetAdditions() + pr.GetDeletions()
+
+	var reviewers []string
+	for r := range uniqueReviewers {
+		reviewers = append(reviewers, r)
+	}
 
 	metrics := &PRMetrics{
 		Number:                  prNumber,
@@ -97,6 +124,7 @@ func GetPRMetrics(ctx context.Context, client *github.Client, owner, repo string
 		SizeCategory:            sizeCategory,
 		PRUrl:                   pr.GetHTMLURL(),
 		CreatedBy:               pr.GetUser().GetLogin(),
+		Reviewers:               reviewers,
 		Additions:               pr.GetAdditions(),
 		Deletions:               pr.GetDeletions(),
 		ChangedFiles:            pr.GetChangedFiles(),
@@ -136,7 +164,9 @@ func categorizePRSize(pr *github.PullRequest) string {
 	}
 }
 
-func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, client *github.Client) error {
+var emitCount int
+
+func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, prCounts map[string]map[string]int) error {
 	meter := otel.GetMeterProvider().Meter("github-metrics")
 
 	prAddCounter, _ := meter.Int64Counter("pr_additions_total")
@@ -147,10 +177,43 @@ func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, client *github.Clien
 	prApproveToMergeTime, _ := meter.Float64Gauge("pr_time_from_approval_to_merge_seconds")
 	prReviewIterations, _ := meter.Int64Gauge("pr_review_iterations")
 	prAprovalTime, _ := meter.Float64Gauge("pr_time_to_approval_seconds")
-	prCount, err := countPRsByOrgWithRepo(ctx, client, Organization)
-	if err != nil {
-		log.Printf("Failed to get PR counts: %v", err)
+	prReviewLoad, _ := meter.Int64UpDownCounter("pr_reviewers_load")
+	prContributorLoad, _ := meter.Int64UpDownCounter("pr_contributor_load")
+	if prCounts == nil {
+		log.Printf("Warning: prCounts is nil, skipping pr_count metric")
 	}
+
+	for _, reviewer := range m.Reviewers {
+		emitCount++
+
+		log.Printf(
+			"METRIC EMIT#%d: pr_review_load repo=%s reviewer=%s pr=%d",
+			emitCount,
+			m.RepoName,
+			reviewer,
+			m.Number,
+		)
+
+		reviewerattrs := []attribute.KeyValue{
+			attribute.String("repo", m.RepoName),
+			attribute.String("reviewer", reviewer),
+			attribute.String("size_category", m.SizeCategory),
+			attribute.String("time_to_first_review", m.TimeToFirstReview.String()),
+			attribute.Int64("iteration", int64(m.ReviewIterations)),
+		}
+
+		prReviewLoad.Add(ctx, 1, metric.WithAttributes(reviewerattrs...))
+	}
+
+	// Emit contributor load — counts PRs created per author
+	contributorAttrs := []attribute.KeyValue{
+		attribute.String("repo", m.RepoName),
+		attribute.String("author", m.CreatedBy),
+		attribute.String("size_category", m.SizeCategory),
+	}
+	prContributorLoad.Add(ctx, 1, metric.WithAttributes(contributorAttrs...))
+
+	log.Printf("METRIC EMIT: pr_contributor_load repo=%s author=%s pr=%d", m.RepoName, m.CreatedBy, m.Number)
 
 	attrs := []attribute.KeyValue{
 		attribute.String("repo", m.RepoName),
@@ -166,7 +229,7 @@ func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, client *github.Clien
 	prApproveToMergeTime.Record(ctx, m.TimeFromApprovalToMerge.Seconds(), metric.WithAttributes(attrs...))
 	prReviewIterations.Record(ctx, int64(m.ReviewIterations), metric.WithAttributes(attrs...))
 	prAprovalTime.Record(ctx, m.TimeToApproval.Seconds(), metric.WithAttributes(attrs...))
-	emitPRCountMetrics(ctx, prCount, m)
+	emitPRCountMetrics(ctx, prCounts, m)
 
 	return nil
 }
@@ -179,27 +242,53 @@ func searchIssues(ctx context.Context, client *github.Client, query string) ([]*
 	}
 
 	var all []*github.Issue
+
 	for {
 		result, resp, err := client.Search.Issues(ctx, query, opts)
+
 		if err != nil {
+
+			// Handle rate limit
 			if resp != nil && resp.Rate.Remaining == 0 {
+
 				wait := time.Until(resp.Rate.Reset.Time)
+
+				// guard against invalid reset time
+				if wait <= 0 || wait > time.Hour {
+					wait = 10 * time.Second
+				}
+
 				log.Printf("⚠️ Rate limit hit. Waiting %v...", wait)
-				time.Sleep(wait + time.Second)
+				time.Sleep(wait)
 				continue
 			}
+
+			// Handle temporary GitHub errors (502/503/504)
+			if resp != nil && resp.StatusCode >= 500 {
+				log.Printf("⚠️ GitHub server error (%d). Retrying in 5s...", resp.StatusCode)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+
 			return nil, err
 		}
+
 		all = append(all, result.Issues...)
+
 		if resp.NextPage == 0 {
 			break
 		}
+
 		opts.Page = resp.NextPage
+
+		// small delay to avoid hitting secondary rate limit
+		time.Sleep(200 * time.Millisecond)
 	}
+
 	return all, nil
 }
 
-func countPRsByOrgWithRepo(ctx context.Context, client *github.Client, org string) (map[string]map[string]int, error) {
+func CountPRsByOrgWithRepo(ctx context.Context, client *github.Client, org string) (map[string]map[string]int, error) {
 	result := make(map[string]map[string]int)
 
 	opts := &github.RepositoryListByOrgOptions{
