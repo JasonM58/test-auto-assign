@@ -86,9 +86,12 @@ func GetPRMetrics(ctx context.Context, client *github.Client, owner, repo string
 		}
 	}
 
-	timeToMerge := mergedAt.Sub(createdAt.Time)
-	if timeToMerge.Seconds() < 0 {
-		return nil, fmt.Errorf("merged_at is before created_at for PR #%d in %s/%s", prNumber, owner, repo)
+	var timeToMerge time.Duration
+	if !mergedAt.IsZero() {
+		timeToMerge = mergedAt.Sub(createdAt.Time)
+		if timeToMerge < 0 {
+			timeToMerge = 0
+		}
 	}
 
 	var timeToFirstReview, timeToApproval, timeFromApprovalToMerge time.Duration
