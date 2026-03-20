@@ -1,22 +1,35 @@
 name: Auto Assign Reviewer
 
 on:
-    pull_request:
-        types: [opened, synchronize]
+  pull_request:
+    types: [opened, synchronize]
 
 jobs:
-    auto-assign:
-        runs-on: ubuntu-latest
-        
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v4
+  auto-assign:
+    runs-on: ubuntu-latest
 
-            - name: Set up Go
-              uses: actions/setup-go@v4
-              with:
-                go-version: '1.22'
+    env:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
-            - name: Run auto assign
-              run: go run ./cmd/main.go
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      # 🔥 STEP PALING PENTING
+      - name: Generate env.yaml
+        run: |
+          cat <<EOF > env.yaml
+          github:
+            app_id: ${APP_ID}
+            private_key: |-
+$(echo "${APP_PRIVATE_KEY}" | sed 's/^/        /')
+          EOF
+
+      - name: Run auto assign
+        run: go run ./cmd/main.go
