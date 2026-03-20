@@ -6,7 +6,7 @@ on:
 
 jobs:
     auto-assign:
-        runs-on: ubuntu-latests
+        runs-on: ubuntu-latest
         
         steps:
             - name: Checkout repository
