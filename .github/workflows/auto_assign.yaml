@@ -2,11 +2,11 @@ name: Auto Assign Reviewer
 
 on:
     pull_request:
-        types: [opened]
+        types: [opened, synchronize]
 
 jobs:
     auto-assign:
-        runs-on: self-hosted
+        runs-on: ubuntu-latests
         
         steps:
             - name: Checkout repository
@@ -18,4 +18,5 @@ jobs:
                 go-version: '1.22'
 
             - name: Run auto assign
-              run: go run ./cn
+              run: go run ./cmd/main.go
+
