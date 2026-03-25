@@ -28,7 +28,7 @@ jobs:
           github:
             app_id: ${APP_ID}
             private_key: |-
-$(echo "${APP_PRIVATE_KEY}" | sed 's/^/        /')
+            $(echo "${APP_PRIVATE_KEY}" | sed 's/^/        /')
           EOF
 
       - name: Run auto assign
