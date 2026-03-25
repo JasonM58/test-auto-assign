@@ -24,12 +24,8 @@ jobs:
       # 🔥 STEP PALING PENTING
       - name: Generate env.yaml
         run: |
-          cat <<EOF > env.yaml
-          github:
-            app_id: ${APP_ID}
-            private_key: |-
-            $(echo "${APP_PRIVATE_KEY}" | sed 's/^/        /')
-          EOF
+          echo "${APP_PRIVATE_KEY}" > /tmp/github-app-private-key.pem
+          printf 'github:\n  app_id: %s\n  private_key_path: /tmp/github-app-private-key.pem\n' "${APP_ID}" > env.yaml
 
       - name: Run auto assign
         run: go run ./cmd/main.go

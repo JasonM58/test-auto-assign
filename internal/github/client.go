@@ -13,7 +13,15 @@ import (
 func SetupClient(ctx context.Context, cfg *config.Loader) *github.Client {
 	auth := githubclient.GitHubAuth{AppID: cfg.GetGithubAppId()}
 
-	privateKey, err := githubclient.LoadPrivateKey(cfg.GetGithubPrivateKey())
+	keyInput := cfg.GetGithubPrivateKey()
+	if keyInput == "" {
+		keyInput = cfg.GetGithubPrivateKeyPath()
+	}
+	if keyInput == "" {
+		log.Fatal("❌ Neither private_key nor private_key_path is configured")
+	}
+
+	privateKey, err := githubclient.LoadPrivateKey(keyInput)
 	if err != nil {
 		log.Fatalf("❌ Failed to load private key: %v", err)
 	}
