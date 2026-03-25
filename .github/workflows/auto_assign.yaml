@@ -21,11 +21,15 @@ jobs:
         with:
           go-version: '1.22'
 
-      # 🔥 STEP PALING PENTING
       - name: Generate env.yaml
         run: |
-          echo "${APP_PRIVATE_KEY}" > /tmp/github-app-private-key.pem
-          printf 'github:\n  app_id: %s\n  private_key_path: /tmp/github-app-private-key.pem\n' "${APP_ID}" > env.yaml
+          echo "github:" > env.yaml
+          echo "  app_id: ${APP_ID}" >> env.yaml
+          echo "  private_key: |-" >> env.yaml
+          echo "${APP_PRIVATE_KEY}" | sed 's/^/    /' >> env.yaml
+
+      - name: Debug env.yaml
+        run: cat env.yaml
 
       - name: Run auto assign
         run: go run ./cmd/main.go
