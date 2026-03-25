@@ -21,6 +21,7 @@ jobs:
         with:
           go-version: '1.22'
 
+      # 🔥 Generate config file from secrets
       - name: Generate env.yaml
         run: |
           echo "github:" > env.yaml
@@ -28,8 +29,13 @@ jobs:
           echo "  private_key: |-" >> env.yaml
           printf "%b" "${APP_PRIVATE_KEY}" | sed 's/^/    /' >> env.yaml
 
-      - name: Debug env.yaml
-        run: cat env.yaml
+      # 🔍 Debug (optional – bisa dihapus nanti)
+      - name: Debug env.yaml (safe)
+        run: |
+          echo "env.yaml generated"
+          echo "app_id present: ${APP_ID:+yes}"
+          echo "private_key length: ${#APP_PRIVATE_KEY}"
 
+      # 🚀 Run main app
       - name: Run auto assign
         run: go run ./cmd/main.go
