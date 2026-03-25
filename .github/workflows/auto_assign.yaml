@@ -26,7 +26,7 @@ jobs:
           echo "github:" > env.yaml
           echo "  app_id: ${APP_ID}" >> env.yaml
           echo "  private_key: |-" >> env.yaml
-          echo "${APP_PRIVATE_KEY}" | sed 's/^/    /' >> env.yaml
+          printf "%b" "${APP_PRIVATE_KEY}" | sed 's/^/    /' >> env.yaml
 
       - name: Debug env.yaml
         run: cat env.yaml
