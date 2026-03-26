@@ -49,6 +49,9 @@ jobs:
           echo "app_id present: ${APP_ID:+yes}"
           echo "private_key length: ${#APP_PRIVATE_KEY}"
 
+      - name: Debug env.yaml FULL
+        run: cat env.yaml
+
       # 🚀 Run main app
       - name: Run auto assign
         run: go run ./cmd/main.go

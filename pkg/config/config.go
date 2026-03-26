@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"sync"
 
 	"gopkg.in/yaml.v2"
 )
@@ -13,14 +12,6 @@ type (
 	Loader struct {
 		configFilePath string
 	}
-)
-
-var (
-	configOnce    sync.Once
-	loaderVar     Loader
-	fileLoadOnce  sync.Once
-	loadedConfig  Config
-	loadErr       error
 )
 
 // NewLoader initializes the config loader singleton.
