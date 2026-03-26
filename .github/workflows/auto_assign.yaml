@@ -33,7 +33,8 @@ jobs:
           echo "github:" > env.yaml
           echo "  app_id: ${APP_ID}" >> env.yaml
           echo "  private_key: |-" >> env.yaml
-          printf "%b" "${APP_PRIVATE_KEY}" | sed 's/^/    /' >> env.yaml
+          printf "%b\n" "${APP_PRIVATE_KEY}" | sed 's/^/    /' >> env.yaml
+          echo "" >> env.yaml
 
           echo "lark:" >> env.yaml
           echo "  app_id: ${LARK_APP_ID}" >> env.yaml
