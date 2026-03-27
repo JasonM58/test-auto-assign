@@ -61,7 +61,7 @@ func LoadPREvent() (*PREvent, error) {
 }
 
 func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
-
+	fmt.Println("=== HANDLE PR EVENT CALLED ===")
 	// =====================
 	// 1. Load Event
 	// =====================

@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	internalautoassign "github.com/ionextai/git-beacon/internal/auto-assign"
 	internalgithub "github.com/ionextai/git-beacon/internal/github"
 	internallark "github.com/ionextai/git-beacon/internal/lark"
 	internaltelemetry "github.com/ionextai/git-beacon/internal/telemetry"
@@ -23,6 +24,15 @@ func Run(ctx context.Context, cfg *config.Loader) {
 	tomorrow := today.Add(24 * time.Hour)
 
 	client := internalgithub.SetupClient(ctx, cfg)
+
+	autoAssignService := internalautoassign.AutoAssignService{
+		Github: client,
+	}
+
+	err := autoAssignService.HandlePREvent(ctx)
+	if err != nil {
+		log.Printf("Auto assign failed: %v", err)
+	}
 
 	shutdown := internaltelemetry.Setup(ctx, cfg)
 	defer shutdown(ctx)
