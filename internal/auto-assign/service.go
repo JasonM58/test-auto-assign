@@ -100,6 +100,21 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 		fmt.Println("User:", c.GetLogin(), "Contributions:", c.GetContributions())
 	}
 
+	collaborators, _, err := s.Github.Repositories.ListCollaborators(ctx, owner, repo, nil)
+	if err != nil {
+		return err
+	}
+
+	collabMap := make(map[string]bool)
+	for _, c := range collaborators {
+		collabMap[c.GetLogin()] = true
+	}
+
+	fmt.Println("=== COLLABORATORS ===")
+	for _, c := range collaborators {
+		fmt.Println(c.GetLogin())
+	}
+
 	// =====================
 	// 3. Build Candidates
 	// =====================
@@ -112,6 +127,10 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 		if login == "" ||
 			login == event.PullRequest.User.Login ||
 			strings.Contains(login, "bot") {
+			continue
+		}
+
+		if !collabMap[login] {
 			continue
 		}
 
