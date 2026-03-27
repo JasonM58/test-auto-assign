@@ -25,8 +25,13 @@ func Run(ctx context.Context, cfg *config.Loader) {
 
 	client := internalgithub.SetupClient(ctx, cfg)
 
+	metrics := &internalautoassign.GitHubMetrics{
+		Client: client,
+	}
+
 	autoAssignService := internalautoassign.AutoAssignService{
-		Github: client,
+		Github:  client,
+		Metrics: metrics,
 	}
 
 	err := autoAssignService.HandlePREvent(ctx)
