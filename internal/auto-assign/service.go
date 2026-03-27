@@ -4,17 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/google/go-github/v61/github"
 )
 
 type AutoAssignService struct {
-	Github *github.Client
+	Github  *github.Client
+	Metrics MetricsProvider
 }
 
 type PREvent struct {
@@ -38,11 +37,6 @@ type PREvent struct {
 	} `json:"pull_request"`
 }
 
-type Candidate struct {
-	Login string
-	Score int
-}
-
 func LoadPREvent() (*PREvent, error) {
 	path := os.Getenv("GITHUB_EVENT_PATH")
 
@@ -61,7 +55,8 @@ func LoadPREvent() (*PREvent, error) {
 }
 
 func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
-	fmt.Println("=== HANDLE PR EVENT CALLED ===")
+	fmt.Println("=== AUTO ASSIGN START ===")
+
 	// =====================
 	// 1. Load Event
 	// =====================
@@ -70,12 +65,6 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 		return err
 	}
 
-	fmt.Println("=== EVENT DEBUG ===")
-	fmt.Println("Action:", event.Action)
-	fmt.Println("PR:", event.PullRequest.Number)
-	fmt.Println("Author:", event.PullRequest.User.Login)
-
-	// Only handle PR opened
 	if event.Action != "opened" {
 		fmt.Println("Skip event:", event.Action)
 		return nil
@@ -83,40 +72,35 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 
 	owner := event.PullRequest.Base.Repo.Owner.Login
 	repo := event.PullRequest.Base.Repo.Name
+	prNumber := event.PullRequest.Number
+	prAuthor := event.PullRequest.User.Login
 
 	fmt.Println("Repo:", owner+"/"+repo)
+	fmt.Println("PR:", prNumber)
 
 	// =====================
-	// 2. Get Contributors
+	// 2. Get Collaborators
 	// =====================
-	contributors, _, err := s.Github.Repositories.ListContributors(ctx, owner, repo, nil)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("=== CONTRIBUTORS ===")
-	fmt.Println("Total contributors:", len(contributors))
-	for _, c := range contributors {
-		fmt.Println("User:", c.GetLogin(), "Contributions:", c.GetContributions())
-	}
-
 	collaborators, _, err := s.Github.Repositories.ListCollaborators(ctx, owner, repo, nil)
 	if err != nil {
 		return err
 	}
 
-	collabMap := make(map[string]bool)
-	for _, c := range collaborators {
-		collabMap[c.GetLogin()] = true
+	// =====================
+	// 3. Get Existing Reviewers
+	// =====================
+	pr, _, err := s.Github.PullRequests.Get(ctx, owner, repo, prNumber)
+	if err != nil {
+		return err
 	}
 
-	fmt.Println("=== COLLABORATORS ===")
-	for _, c := range collaborators {
-		fmt.Println(c.GetLogin())
+	existing := map[string]bool{}
+	for _, r := range pr.RequestedReviewers {
+		existing[r.GetLogin()] = true
 	}
 
 	// =====================
-	// 3. Build Candidates
+	// 4. Build Candidates
 	// =====================
 	var candidates []Candidate
 
@@ -124,22 +108,38 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 		login := c.GetLogin()
 
 		if login == "" ||
-			login == event.PullRequest.User.Login ||
-			strings.Contains(login, "bot") {
+			login == prAuthor ||
+			strings.Contains(login, "bot") ||
+			existing[login] {
 			continue
 		}
 
+		openPR, err := s.Metrics.GetOpenPRCount(ctx, owner, login)
+		if err != nil {
+			fmt.Println("error openPR:", login, err)
+			openPR = 0
+		}
+
+		recent, err := s.Metrics.GetRecentReviewCount(ctx, owner, login)
+		if err != nil {
+			fmt.Println("error recent:", login, err)
+			recent = 0
+		}
+
+		score := CalculateScore(openPR, recent)
+
+		fmt.Printf("User=%s OpenPR=%d Score=%d\n", login, openPR, score)
+
 		candidates = append(candidates, Candidate{
-			Login: login,
-			Score: 0, // will be calculated later
+			Login:         login,
+			OpenPRCount:   openPR,
+			RecentReviews: recent,
+			Score:         score,
 		})
 	}
 
-	fmt.Println("=== FILTERED CANDIDATES ===")
-	fmt.Println("Total candidates:", len(candidates))
-
 	// =====================
-	// 4. Edge Case
+	// 5. Edge Case
 	// =====================
 	if len(candidates) == 0 {
 		fmt.Println("No candidates available")
@@ -147,59 +147,53 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 	}
 
 	// =====================
-	// 5. Sort Candidates
+	// 6. Sort by Score
 	// =====================
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].Score > candidates[j].Score
 	})
 
-	fmt.Println("=== RANKED CANDIDATES ===")
+	fmt.Println("=== RANKING ===")
 	for i, c := range candidates {
-		fmt.Printf("%d. %s (score: %d)\n", i+1, c.Login, c.Score)
+		fmt.Printf("%d. %s (score=%d)\n", i+1, c.Login, c.Score)
 	}
 
 	// =====================
-	// 6. Random Selection (Top N)
+	// 7. Select Top 2
 	// =====================
-	rand.Seed(time.Now().UnixNano())
-
-	topN := 3
+	topN := 2
 	if len(candidates) < topN {
 		topN = len(candidates)
 	}
 
-	fmt.Println("=== TOP CANDIDATES ===")
+	var reviewers []string
 	for i := 0; i < topN; i++ {
-		fmt.Printf("%d. %s (score: %d)\n", i+1, candidates[i].Login, candidates[i].Score)
+		reviewers = append(reviewers, candidates[i].Login)
 	}
 
-	reviewer := candidates[rand.Intn(topN)]
-
-	fmt.Println("Selected reviewer:", reviewer.Login)
+	fmt.Println("Selected reviewers:", reviewers)
 
 	// =====================
-	// 7. Assign Reviewer
+	// 8. Assign Reviewer
 	// =====================
-	fmt.Println("Assigning reviewer to PR...")
-
 	req := github.ReviewersRequest{
-		Reviewers: []string{reviewer.Login},
+		Reviewers: reviewers,
 	}
 
 	_, _, err = s.Github.PullRequests.RequestReviewers(
 		ctx,
 		owner,
 		repo,
-		event.PullRequest.Number,
+		prNumber,
 		req,
 	)
 
 	if err != nil {
 		fmt.Println("Failed to assign reviewer:", err)
-		return nil // do not fail workflow
+		return nil
 	}
 
-	fmt.Println("Assigned reviewer:", reviewer.Login)
+	fmt.Println("Assigned reviewers:", reviewers)
 
 	return nil
 }
