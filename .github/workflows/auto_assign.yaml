@@ -2,7 +2,7 @@ name: Auto Assign Reviewer
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened]
 
 jobs:
   auto-assign:
@@ -27,7 +27,6 @@ jobs:
         with:
           go-version: '1.22'
 
-      # 🔥 Generate config file from secrets
       - name: Generate env.yaml
         run: |
           echo "github:" > env.yaml
@@ -43,16 +42,5 @@ jobs:
           echo "  secret: ${LARK_BOT_SECRET}" >> env.yaml
           echo "  webhook_url: ${LARK_WEBHOOK_URL}" >> env.yaml
 
-      # 🔍 Debug (optional – bisa dihapus nanti)
-      - name: Debug env.yaml (safe)
-        run: |
-          echo "env.yaml generated"
-          echo "app_id present: ${APP_ID:+yes}"
-          echo "private_key length: ${#APP_PRIVATE_KEY}"
-
-      - name: Debug env.yaml FULL
-        run: cat env.yaml
-
-      # 🚀 Run main app
       - name: Run auto assign
         run: go run ./cmd/main.go
