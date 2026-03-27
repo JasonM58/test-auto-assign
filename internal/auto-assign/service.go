@@ -120,23 +120,18 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 	// =====================
 	var candidates []Candidate
 
-	for _, c := range contributors {
+	for _, c := range collaborators {
 		login := c.GetLogin()
 
-		// filter invalid
 		if login == "" ||
 			login == event.PullRequest.User.Login ||
 			strings.Contains(login, "bot") {
 			continue
 		}
 
-		if !collabMap[login] {
-			continue
-		}
-
 		candidates = append(candidates, Candidate{
 			Login: login,
-			Score: c.GetContributions(),
+			Score: 0, // will be calculated later
 		})
 	}
 
