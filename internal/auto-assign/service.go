@@ -164,11 +164,18 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 	topN := 2
 	if len(candidates) < topN {
 		topN = len(candidates)
+	} else if len(candidates) == 1 {
+		//the rest will be mentioned in the PR Comment
 	}
 
 	var reviewers []string
 	for i := 0; i < topN; i++ {
 		reviewers = append(reviewers, candidates[i].Login)
+	}
+
+	fmt.Println("=== FINAL RANKING ===")
+	for i, c := range candidates {
+		fmt.Printf("%d. %s (openPR=%d score=%d)\n", i+1, c.Login, c.OpenPRCount, c.Score)
 	}
 
 	fmt.Println("Selected reviewers:", reviewers)

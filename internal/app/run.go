@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sort"
 	"time"
@@ -16,18 +17,53 @@ import (
 
 const locationName = "Asia/Jakarta"
 
-func Run(ctx context.Context, cfg *config.Loader) {
-
-	loc, _ := time.LoadLocation(locationName)
-
-	today := time.Now().In(loc).Truncate(24 * time.Hour)
-	tomorrow := today.Add(24 * time.Hour)
+func Run(ctx context.Context, cfg *config.Loader, mode string) {
 
 	client := internalgithub.SetupClient(ctx, cfg)
 
 	metrics := &internalautoassign.GitHubMetrics{
 		Client: client,
 	}
+
+	org := "ionextai"
+
+	// =========================
+	// MODE: METRICS ONLY (LOCAL TEST)
+	// =========================
+	if mode == "metrics" {
+		fmt.Println("=== METRICS MODE ===")
+
+		collaborators, _, err := client.Repositories.ListCollaborators(ctx, org, "repo-name", nil)
+		if err != nil {
+			log.Printf("failed get collaborators: %v", err)
+			return
+		}
+
+		for _, c := range collaborators {
+			user := c.GetLogin()
+
+			if user == "" {
+				continue
+			}
+
+			openPR, err := metrics.GetOpenPRCount(ctx, org, user)
+			if err != nil {
+				fmt.Printf("❌ %s error: %v\n", user, err)
+				continue
+			}
+
+			score := internalautoassign.CalculateScore(openPR, 0)
+
+			fmt.Printf("User=%s OpenPR=%d Score=%d\n", user, openPR, score)
+		}
+
+		return
+	}
+
+	// =========================
+	// MODE: AUTO ASSIGN (DEFAULT)
+	// =========================
+	fmt.Println("=== AUTO ASSIGN MODE ===")
 
 	autoAssignService := internalautoassign.AutoAssignService{
 		Github:  client,
@@ -39,14 +75,18 @@ func Run(ctx context.Context, cfg *config.Loader) {
 		log.Printf("Auto assign failed: %v", err)
 	}
 
+	// =========================
+	// TELEMETRY + NOTIFICATION
+	// =========================
 	shutdown := internaltelemetry.Setup(ctx, cfg)
 	defer shutdown(ctx)
 
 	notifier := internallark.NewNotifier(cfg, client)
 
-	org := "ionextai"
+	loc, _ := time.LoadLocation(locationName)
+	today := time.Now().In(loc).Truncate(24 * time.Hour)
+	tomorrow := today.Add(24 * time.Hour)
 
-	// fetch PR today (open + closed)
 	prs := internalgithub.FetchPRsByOrg(ctx, client, org, today, tomorrow)
 
 	prCounts, err := githubclient.CountPRsByOrgWithRepo(ctx, client, org)
@@ -64,20 +104,11 @@ func Run(ctx context.Context, cfg *config.Loader) {
 	for _, pr := range prs {
 
 		if pr.IsOpen {
-
-			// notify open PR
 			notifier.NotifyOpenPR(ctx, pr)
-
-			// reviewer workload metric (OPEN PR)
 			internalgithub.SendMetrics(ctx, client, pr, prCounts)
-
 		} else {
-
-			// notify merged PR
 			notifier.NotifyMergedPR(ctx, pr)
-
 			internalgithub.SendMetrics(ctx, client, pr, prCounts)
-
 		}
 	}
 }

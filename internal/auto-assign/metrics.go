@@ -3,6 +3,7 @@ package autoassign
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/go-github/v61/github"
 )
@@ -19,12 +20,17 @@ type GitHubMetrics struct {
 func (g *GitHubMetrics) GetOpenPRCount(ctx context.Context, org, user string) (int, error) {
 	query := fmt.Sprintf("org:%s is:pr is:open review-requested:%s", org, user)
 
-	result, _, err := g.Client.Search.Issues(ctx, query, nil)
-	if err != nil {
-		return 0, err
+	for i := 0; i < 3; i++ {
+		result, _, err := g.Client.Search.Issues(ctx, query, nil)
+
+		if err == nil && result != nil {
+			return result.GetTotal(), nil
+		}
+
+		time.Sleep(1 * time.Second)
 	}
 
-	return result.GetTotal(), nil
+	return 0, fmt.Errorf("failed after retry for user=%s query=%s", user, query)
 }
 
 func (g *GitHubMetrics) GetRecentReviewCount(ctx context.Context, org, user string) (int, error) {
