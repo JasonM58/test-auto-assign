@@ -42,8 +42,21 @@ func (g *GitHubMetrics) GetRecentReviewCount(ctx context.Context, org, user stri
 		since,
 	)
 
+	fmt.Println("[DEBUG QUERY]", query)
+
 	for i := 0; i < 3; i++ {
 		result, _, err := g.Client.Search.Issues(ctx, query, nil)
+
+		fmt.Printf("[DEBUG RESULT] user=%s total=%d err=%v\n",
+			user,
+			func() int {
+				if result != nil {
+					return result.GetTotal()
+				}
+				return 0
+			}(),
+			err,
+		)
 
 		if err == nil && result != nil {
 			return result.GetTotal(), nil
