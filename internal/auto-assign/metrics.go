@@ -34,7 +34,7 @@ func (g *GitHubMetrics) GetOpenPRCount(ctx context.Context, org, user string) (i
 }
 
 func (g *GitHubMetrics) GetRecentReviewCount(ctx context.Context, org, user string) (int, error) {
-	since := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
+	since := time.Now().AddDate(0, 0, -7).Format("2006-01-02") //github format
 	query := fmt.Sprintf(
 		"org:%s is:pr is:open reviewed-by:%s updated:>%s",
 		org,
