@@ -34,6 +34,22 @@ func (g *GitHubMetrics) GetOpenPRCount(ctx context.Context, org, user string) (i
 }
 
 func (g *GitHubMetrics) GetRecentReviewCount(ctx context.Context, org, user string) (int, error) {
-	// sementara dummy
-	return 0, nil
+	query := fmt.Sprintf(
+		"org:%s is:pr reviewed-by:%s updated:>7d",
+		org,
+		user,
+	)
+
+	for i := 0; i < 3; i++ {
+		result, _, err := g.Client.Search.Issues(ctx, query, nil)
+
+		if err == nil && result != nil {
+			return result.GetTotal(), nil
+		}
+
+		fmt.Printf("[WARN] recent retry %d user=%s err=%v\n", i+1, user, err)
+		time.Sleep(time.Duration(i+1) * time.Second)
+	}
+
+	return 0, fmt.Errorf("failed recent reviews user=%s", user)
 }

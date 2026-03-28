@@ -136,7 +136,7 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 		openPR, err := s.Metrics.GetOpenPRCount(ctx, owner, login)
 		if err != nil {
 			fmt.Printf("[WARN] openPR failed user=%s err=%v\n", login, err)
-			continue // ⛔ skip user (lebih aman)
+			continue
 		}
 
 		recent, err := s.Metrics.GetRecentReviewCount(ctx, owner, login)
