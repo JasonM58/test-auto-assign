@@ -1,33 +1,61 @@
 package autoassign
 
-import (
-	"context"
-	"fmt"
+import "context"
 
-	"github.com/google/go-github/v61/github"
-)
+// =====================
+// INTERFACE
+// =====================
 
+// MetricsProvider adalah abstraction layer untuk metrics source.
+// Service tidak boleh tahu apakah data berasal dari Prometheus, GitHub, dll.
 type MetricsProvider interface {
-	GetOpenPRCount(ctx context.Context, org, user string) (int, error)
-	GetRecentReviewCount(ctx context.Context, org, user string) (int, error)
+
+	// Workload reviewer berdasarkan PR load
+	GetReviewWorkload(ctx context.Context) (map[string]int, error)
+
+	// Activity reviewer (jumlah review terbaru)
+	GetRecentReviewCount(ctx context.Context) (map[string]int, error)
 }
 
-type GitHubMetrics struct {
-	Client *github.Client
+// =====================
+// DOMAIN MODEL (OPTIONAL BUT RECOMMENDED)
+// =====================
+
+// ReviewerMetrics menyatukan semua metric untuk satu reviewer
+type ReviewerMetrics struct {
+	Workload      int
+	RecentReviews int
 }
 
-func (g *GitHubMetrics) GetOpenPRCount(ctx context.Context, org, user string) (int, error) {
-	query := fmt.Sprintf("org:%s is:pr is:open review-requested:%s", org, user)
+// =====================
+// HELPER (OPTIONAL)
+// =====================
 
-	result, _, err := g.Client.Search.Issues(ctx, query, nil)
-	if err != nil {
-		return 0, err
+// MergeMetrics menggabungkan workload + recent review menjadi 1 struct
+func MergeMetrics(
+	workloads map[string]int,
+	recents map[string]int,
+) map[string]ReviewerMetrics {
+
+	out := make(map[string]ReviewerMetrics)
+
+	// dari workload
+	for reviewer, w := range workloads {
+		out[reviewer] = ReviewerMetrics{
+			Workload:      w,
+			RecentReviews: recents[reviewer],
+		}
 	}
 
-	return result.GetTotal(), nil
-}
+	// handle reviewer yang hanya ada di recents
+	for reviewer, r := range recents {
+		if _, exists := out[reviewer]; !exists {
+			out[reviewer] = ReviewerMetrics{
+				Workload:      0,
+				RecentReviews: r,
+			}
+		}
+	}
 
-func (g *GitHubMetrics) GetRecentReviewCount(ctx context.Context, org, user string) (int, error) {
-	// sementara dummy
-	return 0, nil
+	return out
 }
