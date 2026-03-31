@@ -151,12 +151,46 @@ func getClosedTime(pr *github.PullRequest) *time.Time {
 	return &t
 }
 
-func SendMetrics(ctx context.Context, client *github.Client, pr PullRequest) {
-	metrics, err := githubclient.GetPRMetrics(ctx, client, pr.Repo.Owner, pr.Repo.Name, pr.RawPR)
+func SendMetrics(ctx context.Context, client *github.Client, pr PullRequest, prCounts map[string]map[string]int) {
+
+	metrics, err := githubclient.GetPRMetrics(
+		ctx,
+		client,
+		pr.Repo.Owner,
+		pr.Repo.Name,
+		pr.RawPR,
+	)
 	if err != nil {
 		log.Printf("❌ Failed to calculate metrics for PR #%d: %v", pr.Number, err)
 		return
 	}
 
-	githubclient.SendPRMetricsToOTel(ctx, metrics, client)
+	// =====================
+	// BASE METRICS (optional, safe)
+	// =====================
+	err = githubclient.SendBasePRMetrics(ctx, metrics, prCounts)
+	if err != nil {
+		log.Printf("❌ Failed to send base metrics for PR #%d: %v", pr.Number, err)
+	}
+
+	// =====================
+	// DISPATCH BY STATE
+	// =====================
+
+	if pr.IsOpen {
+
+		// ✅ STATE → boleh berkali-kali
+		err = githubclient.SendWorkloadMetrics(ctx, metrics)
+		if err != nil {
+			log.Printf("❌ Failed to send workload metrics for PR #%d: %v", pr.Number, err)
+		}
+
+	} else {
+
+		// ✅ EVENT → hanya saat merged
+		err = githubclient.SendHistoricalMetrics(ctx, metrics)
+		if err != nil {
+			log.Printf("❌ Failed to send historical metrics for PR #%d: %v", pr.Number, err)
+		}
+	}
 }

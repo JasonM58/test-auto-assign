@@ -11,6 +11,7 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "env.yaml", "Path to configuration file")
+	mode := flag.String("mode", "autoassign", "Mode: autoassign | metrics")
 	flag.Parse()
 
 	if *cfgPath == "" {
@@ -20,5 +21,5 @@ func main() {
 	cfg := config.NewLoader(*cfgPath)
 	ctx := context.Background()
 
-	app.Run(ctx, cfg)
+	app.Run(ctx, cfg, *mode)
 }

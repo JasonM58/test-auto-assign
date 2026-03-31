@@ -16,11 +16,11 @@ type (
 )
 
 var (
-	configOnce    sync.Once
-	loaderVar     Loader
-	fileLoadOnce  sync.Once
-	loadedConfig  Config
-	loadErr       error
+	configOnce   sync.Once
+	loaderVar    Loader
+	fileLoadOnce sync.Once
+	loadedConfig Config
+	loadErr      error
 )
 
 // NewLoader initializes the config loader singleton.
@@ -127,4 +127,22 @@ func (l *Loader) GetTelemetryMetricExportInterval() int {
 		return 10
 	}
 	return val
+}
+
+// --- PROMETHEUS CONFIG ---
+func (l *Loader) GetPrometheusURL() string {
+	u := l.fileLoad().Prometheus.BaseURL
+	if u == "" {
+		return ""
+	}
+	return u
+}
+func (l *Loader) GetPrometheusQueryTimeoutSecs() int {
+	return l.fileLoad().Prometheus.QueryTimeoutSecs
+}
+func (l *Loader) GetPrometheusMaxRetries() int {
+	return l.fileLoad().Prometheus.MaxRetries
+}
+func (l *Loader) GetPrometheusRetryBaseDelayMs() int {
+	return l.fileLoad().Prometheus.RetryBaseDelayMs
 }
