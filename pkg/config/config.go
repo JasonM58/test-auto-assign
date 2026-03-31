@@ -128,3 +128,21 @@ func (l *Loader) GetTelemetryMetricExportInterval() int {
 	}
 	return val
 }
+
+// --- PROMETHEUS CONFIG ---
+func (l *Loader) GetPrometheusURL() string {
+	u := l.fileLoad().Prometheus.BaseURL
+	if u == "" {
+		return ""
+	}
+	return u
+}
+func (l *Loader) GetPrometheusQueryTimeoutSecs() int {
+	return l.fileLoad().Prometheus.QueryTimeoutSecs
+}
+func (l *Loader) GetPrometheusMaxRetries() int {
+	return l.fileLoad().Prometheus.MaxRetries
+}
+func (l *Loader) GetPrometheusRetryBaseDelayMs() int {
+	return l.fileLoad().Prometheus.RetryBaseDelayMs
+}

@@ -2,9 +2,17 @@ package config
 
 type (
 	Config struct {
-		Github    Github    `yaml:"github"`
-		Lark      Lark      `yaml:"lark"`
-		Telemetry Telemetry `yaml:"telemetry"`
+		Github     Github     `yaml:"github"`
+		Lark       Lark       `yaml:"lark"`
+		Telemetry  Telemetry  `yaml:"telemetry"`
+		Prometheus Prometheus `yaml:"prometheus"`
+	}
+
+	Prometheus struct {
+		BaseURL          string `yaml:"base_url"`
+		QueryTimeoutSecs int    `yaml:"query_timeout_secs"`
+		MaxRetries       int    `yaml:"max_retries"`
+		RetryBaseDelayMs int    `yaml:"retry_base_delay_ms"`
 	}
 
 	Github struct {

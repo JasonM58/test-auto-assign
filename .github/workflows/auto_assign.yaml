@@ -2,13 +2,14 @@ name: Auto Assign Reviewer
 
 on:
   pull_request:
-    types: [opened]
+    types: [opened, reopened]
 
 jobs:
   auto-assign:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     env:
+      PROMETHEUS_URL: http://vm-cluster-vmauth.monitoring.svc.cluster.local:8427/select/0/prometheus
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
 
@@ -41,6 +42,12 @@ jobs:
           echo "  github_to_email_map: ${LARK_GITHUB_EMAIL_MAP}" >> env.yaml
           echo "  secret: ${LARK_BOT_SECRET}" >> env.yaml
           echo "  webhook_url: ${LARK_WEBHOOK_URL}" >> env.yaml
+          echo "" >> env.yaml
+          echo "prometheus:" >> env.yaml
+          echo "  base_url: \"${PROMETHEUS_URL}\"" >> env.yaml
+          echo "  query_timeout_secs: 10" >> env.yaml
+          echo "  max_retries: 3" >> env.yaml
+          echo "  retry_base_delay_ms: 500" >> env.yaml
 
       - name: Run auto assign
         run: go run ./cmd/main.go
