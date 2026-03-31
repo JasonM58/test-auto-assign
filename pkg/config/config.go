@@ -137,3 +137,12 @@ func (l *Loader) GetPrometheusURL() string {
 	}
 	return u
 }
+func (l *Loader) GetPrometheusQueryTimeoutSecs() int {
+	return l.fileLoad().Prometheus.QueryTimeoutSecs
+}
+func (l *Loader) GetPrometheusMaxRetries() int {
+	return l.fileLoad().Prometheus.MaxRetries
+}
+func (l *Loader) GetPrometheusRetryBaseDelayMs() int {
+	return l.fileLoad().Prometheus.RetryBaseDelayMs
+}

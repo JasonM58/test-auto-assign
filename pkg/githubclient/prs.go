@@ -185,7 +185,7 @@ func sizeToWeight(size string) int64 {
 
 var emitCount int
 
-func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, prCounts map[string]map[string]int) error {
+func SendBasePRMetrics(ctx context.Context, m *PRMetrics, prCounts map[string]map[string]int) error {
 	meter := otel.GetMeterProvider().Meter("github-metrics")
 
 	prAddCounter, _ := meter.Int64Counter("pr_additions_total")
@@ -195,48 +195,7 @@ func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, prCounts map[string]
 	prFirstTimeToReview, _ := meter.Float64Gauge("pr_time_to_first_review_seconds")
 	prApproveToMergeTime, _ := meter.Float64Gauge("pr_time_from_approval_to_merge_seconds")
 	prReviewIterations, _ := meter.Int64Gauge("pr_review_iterations")
-	prAprovalTime, _ := meter.Float64Gauge("pr_time_to_approval_seconds")
-	prReviewLoad, _ := meter.Int64UpDownCounter("pr_reviewers_load")
-	prContributorLoad, _ := meter.Int64UpDownCounter("pr_contributor_load")
-	if prCounts == nil {
-		log.Printf("Warning: prCounts is nil, skipping pr_count metric")
-	}
-
-	weight := sizeToWeight(m.SizeCategory)
-
-	for _, reviewer := range m.Reviewers {
-		emitCount++
-
-		log.Printf(
-			"METRIC EMIT#%d: pr_review_load repo=%s reviewer=%s pr=%d size=%s weight=%d",
-			emitCount,
-			m.RepoName,
-			reviewer,
-			m.Number,
-			m.SizeCategory,
-			weight,
-		)
-
-		reviewerattrs := []attribute.KeyValue{
-			attribute.String("repo", m.RepoName),
-			attribute.String("reviewer", reviewer),
-			attribute.String("size_category", m.SizeCategory),
-			attribute.String("time_to_first_review", m.TimeToFirstReview.String()),
-			attribute.Int64("iteration", int64(m.ReviewIterations)),
-		}
-
-		prReviewLoad.Add(ctx, weight, metric.WithAttributes(reviewerattrs...))
-	}
-
-	// Emit contributor load — counts PRs created per author
-	contributorAttrs := []attribute.KeyValue{
-		attribute.String("repo", m.RepoName),
-		attribute.String("author", m.CreatedBy),
-		attribute.String("size_category", m.SizeCategory),
-	}
-	prContributorLoad.Add(ctx, 1, metric.WithAttributes(contributorAttrs...))
-
-	log.Printf("METRIC EMIT: pr_contributor_load repo=%s author=%s pr=%d", m.RepoName, m.CreatedBy, m.Number)
+	prApprovalTime, _ := meter.Float64Gauge("pr_time_to_approval_seconds")
 
 	attrs := []attribute.KeyValue{
 		attribute.String("repo", m.RepoName),
@@ -251,8 +210,69 @@ func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, prCounts map[string]
 	prFirstTimeToReview.Record(ctx, m.TimeToFirstReview.Seconds(), metric.WithAttributes(attrs...))
 	prApproveToMergeTime.Record(ctx, m.TimeFromApprovalToMerge.Seconds(), metric.WithAttributes(attrs...))
 	prReviewIterations.Record(ctx, int64(m.ReviewIterations), metric.WithAttributes(attrs...))
-	prAprovalTime.Record(ctx, m.TimeToApproval.Seconds(), metric.WithAttributes(attrs...))
-	emitPRCountMetrics(ctx, prCounts, m)
+	prApprovalTime.Record(ctx, m.TimeToApproval.Seconds(), metric.WithAttributes(attrs...))
+
+	if prCounts != nil {
+		emitPRCountMetrics(ctx, prCounts, m)
+	}
+
+	return nil
+}
+
+func SendWorkloadMetrics(ctx context.Context, m *PRMetrics) error {
+	meter := otel.GetMeterProvider().Meter("github-metrics")
+
+	prReviewLoad, _ := meter.Int64UpDownCounter("pr_reviewers_load")
+
+	weight := sizeToWeight(m.SizeCategory)
+
+	for _, reviewer := range m.Reviewers {
+
+		attrs := []attribute.KeyValue{
+			attribute.String("repo", m.RepoName),
+			attribute.String("reviewer", reviewer),
+			attribute.String("size_category", m.SizeCategory),
+		}
+
+		prReviewLoad.Add(ctx, weight, metric.WithAttributes(attrs...))
+
+		log.Printf(
+			"[WORKLOAD] repo=%s reviewer=%s pr=%d weight=%d",
+			m.RepoName,
+			reviewer,
+			m.Number,
+			weight,
+		)
+	}
+
+	return nil
+}
+
+func SendHistoricalMetrics(ctx context.Context, m *PRMetrics) error {
+	meter := otel.GetMeterProvider().Meter("github-metrics")
+
+	reviewLoadTotal, _ := meter.Int64Counter("pr_reviewers_load_total")
+
+	weight := sizeToWeight(m.SizeCategory)
+
+	for _, reviewer := range m.Reviewers {
+
+		attrs := []attribute.KeyValue{
+			attribute.String("repo", m.RepoName),
+			attribute.String("reviewer", reviewer),
+			attribute.String("size_category", m.SizeCategory),
+		}
+
+		reviewLoadTotal.Add(ctx, weight, metric.WithAttributes(attrs...))
+
+		log.Printf(
+			"[HISTORICAL] repo=%s reviewer=%s pr=%d weight=%d",
+			m.RepoName,
+			reviewer,
+			m.Number,
+			weight,
+		)
+	}
 
 	return nil
 }

@@ -68,9 +68,6 @@ func LoadPREvent() (*PREvent, error) {
 	return &event, nil
 }
 
-// =====================
-// HELPERS
-// =====================
 func getOrDefault(m map[string]int, key string, fallback int) int {
 	if v, ok := m[key]; ok {
 		return v
@@ -85,9 +82,6 @@ func normalize(value, max int) float64 {
 	return float64(value) / float64(max)
 }
 
-// =====================
-// SCORING
-// =====================
 func CalculateScore(workload, recent, maxWorkload, maxRecent int) float64 {
 	wNorm := normalize(workload, maxWorkload)
 	rNorm := normalize(recent, maxRecent)
@@ -99,9 +93,6 @@ func CalculateScore(workload, recent, maxWorkload, maxRecent int) float64 {
 	return score
 }
 
-// =====================
-// MAIN HANDLER
-// =====================
 func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 	fmt.Println("=== AUTO ASSIGN START ===")
 
@@ -130,9 +121,7 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 	fmt.Printf("Repo: %s/%s\n", owner, repo)
 	fmt.Printf("PR: %d | Author: %s\n", prNumber, prAuthor)
 
-	// =====================
-	// FETCH DATA
-	// =====================
+	//  Fetch Data
 	collaborators, _, err := s.Github.Repositories.ListCollaborators(ctx, owner, repo, nil)
 	if err != nil {
 		return fmt.Errorf("failed get collaborators: %w", err)
@@ -148,9 +137,7 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 		existing[r.GetLogin()] = true
 	}
 
-	// =====================
-	// FETCH METRICS
-	// =====================
+	// Fetch Metric
 	workloads, err := s.Metrics.GetReviewWorkload(ctx)
 	if err != nil {
 		fmt.Printf("[WARN] workload fetch failed: %v\n", err)
@@ -166,9 +153,6 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 	fmt.Printf("[METRICS] workloads=%v\n", workloads)
 	fmt.Printf("[METRICS] recents=%v\n", recents)
 
-	// =====================
-	// MAX VALUES
-	// =====================
 	maxWorkload := 1
 	for _, v := range workloads {
 		if v > maxWorkload {
@@ -183,9 +167,6 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 		}
 	}
 
-	// =====================
-	// BUILD CANDIDATES
-	// =====================
 	var candidates []Candidate
 
 	for _, c := range collaborators {
@@ -219,9 +200,7 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 		return nil
 	}
 
-	// =====================
-	// SORT + FAIRNESS
-	// =====================
+	// Sort + Fairness
 	rand.Seed(time.Now().UnixNano())
 
 	sort.Slice(candidates, func(i, j int) bool {
@@ -236,9 +215,7 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 		fmt.Printf("%d. %s (score=%.4f)\n", i+1, c.Login, c.Score)
 	}
 
-	// =====================
-	// SELECT TOP N
-	// =====================
+	// Select Top N
 	topN := 2
 	if len(candidates) < topN {
 		topN = len(candidates)
@@ -251,9 +228,7 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 
 	fmt.Println("[SELECTED]", selected)
 
-	// =====================
-	// ASSIGN REVIEWERS
-	// =====================
+	// Assign Reviewer
 	req := github.ReviewersRequest{
 		Reviewers: selected,
 	}

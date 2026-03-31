@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
 	"sort"
 	"time"
 
@@ -22,9 +21,26 @@ func Run(ctx context.Context, cfg *config.Loader, mode string) {
 
 	client := internalgithub.SetupClient(ctx, cfg)
 
-	metricsProvider := &internalautoassign.PrometheusMetrics{
-		BaseURL: cfg.GetPrometheusURL(),
-		Client:  &http.Client{},
+	metricsProvider := internalautoassign.NewPrometheusMetrics(cfg.GetPrometheusURL(), nil)
+
+	// Wire optional production-tuning from config (zero values keep defaults).
+	if v := cfg.GetPrometheusQueryTimeoutSecs(); v > 0 {
+		metricsProvider.QueryTimeout = time.Duration(v) * time.Second
+	}
+	if v := cfg.GetPrometheusMaxRetries(); v > 0 {
+		metricsProvider.MaxRetries = v
+	}
+	if v := cfg.GetPrometheusRetryBaseDelayMs(); v > 0 {
+		metricsProvider.RetryBaseDelay = time.Duration(v) * time.Millisecond
+	}
+
+	// Startup health check — fail fast if VictoriaMetrics is unreachable.
+	if cfg.GetPrometheusURL() != "" {
+		if err := metricsProvider.Ping(ctx); err != nil {
+			log.Printf("⚠️ Prometheus/VictoriaMetrics health check failed: %v (continuing anyway)", err)
+		} else {
+			log.Println("✅ Prometheus/VictoriaMetrics is reachable")
+		}
 	}
 
 	org := "ionextai"
@@ -81,31 +97,30 @@ func Run(ctx context.Context, cfg *config.Loader, mode string) {
 		return
 	}
 
-	// =========================
-	// AUTO ASSIGN
-	// =========================
-	fmt.Println("=== AUTO ASSIGN MODE ===")
+	if mode == "autoassign" {
+		fmt.Println("=== AUTO ASSIGN MODE ===")
 
-	autoAssignService := internalautoassign.AutoAssignService{
-		Github:  client,
-		Metrics: metricsProvider,
+		autoAssignService := internalautoassign.AutoAssignService{
+			Github:  client,
+			Metrics: metricsProvider,
+		}
+
+		if err := autoAssignService.HandlePREvent(ctx); err != nil {
+			log.Printf("Auto assign failed: %v", err)
+		}
+
+		// Exit quickly so the GitHub Action doesn't hang processing telemetry!
+		return
 	}
 
-	if err := autoAssignService.HandlePREvent(ctx); err != nil {
-		log.Printf("Auto assign failed: %v", err)
-	}
+	fmt.Println("=== TELEMETRY MODE ===")
 
-	// =========================
-	// TELEMETRY SETUP
-	// =========================
 	shutdown := internaltelemetry.Setup(ctx, cfg)
 	defer shutdown(ctx)
 
 	notifier := internallark.NewNotifier(cfg, client)
 
-	// =========================
-	// FETCH PR
-	// =========================
+	//Fetch PR
 	loc, _ := time.LoadLocation(locationName)
 	today := time.Now().In(loc).Truncate(24 * time.Hour)
 	tomorrow := today.Add(24 * time.Hour)
@@ -124,9 +139,7 @@ func Run(ctx context.Context, cfg *config.Loader, mode string) {
 		return prs[i].CreatedAt.After(prs[j].CreatedAt)
 	})
 
-	// =========================
-	// PROCESS PR
-	// =========================
+	//Process PR
 	for _, pr := range prs {
 
 		metrics, err := githubclient.GetPRMetrics(
@@ -141,18 +154,11 @@ func Run(ctx context.Context, cfg *config.Loader, mode string) {
 			continue
 		}
 
-		// -------------------------
-		// BASE METRICS (ALL PR)
-		// -------------------------
 		if err := githubclient.SendBasePRMetrics(ctx, metrics, prCounts); err != nil {
 			log.Printf("❌ Failed base metrics PR #%d: %v", pr.Number, err)
 		}
 
 		if pr.IsOpen {
-
-			// -------------------------
-			// OPEN PR → WORKLOAD
-			// -------------------------
 			notifier.NotifyOpenPR(ctx, pr)
 
 			if err := githubclient.SendWorkloadMetrics(ctx, metrics); err != nil {
@@ -161,9 +167,6 @@ func Run(ctx context.Context, cfg *config.Loader, mode string) {
 
 		} else {
 
-			// -------------------------
-			// MERGED PR ONLY
-			// -------------------------
 			if pr.RawPR.GetMergedAt().IsZero() {
 				continue // skip closed but not merged
 			}

@@ -9,7 +9,10 @@ type (
 	}
 
 	Prometheus struct {
-		BaseURL string `yaml:"base_url"`
+		BaseURL          string `yaml:"base_url"`
+		QueryTimeoutSecs int    `yaml:"query_timeout_secs"`
+		MaxRetries       int    `yaml:"max_retries"`
+		RetryBaseDelayMs int    `yaml:"retry_base_delay_ms"`
 	}
 
 	Github struct {
