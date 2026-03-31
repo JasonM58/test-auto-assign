@@ -168,6 +168,21 @@ func categorizePRSize(pr *github.PullRequest) string {
 	}
 }
 
+func sizeToWeight(size string) int64 {
+	switch size {
+	case "small":
+		return 1
+	case "medium":
+		return 2
+	case "large":
+		return 3
+	case "extra large":
+		return 4
+	default:
+		return 1
+	}
+}
+
 var emitCount int
 
 func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, prCounts map[string]map[string]int) error {
@@ -187,15 +202,19 @@ func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, prCounts map[string]
 		log.Printf("Warning: prCounts is nil, skipping pr_count metric")
 	}
 
+	weight := sizeToWeight(m.SizeCategory)
+
 	for _, reviewer := range m.Reviewers {
 		emitCount++
 
 		log.Printf(
-			"METRIC EMIT#%d: pr_review_load repo=%s reviewer=%s pr=%d",
+			"METRIC EMIT#%d: pr_review_load repo=%s reviewer=%s pr=%d size=%s weight=%d",
 			emitCount,
 			m.RepoName,
 			reviewer,
 			m.Number,
+			m.SizeCategory,
+			weight,
 		)
 
 		reviewerattrs := []attribute.KeyValue{
@@ -206,7 +225,7 @@ func SendPRMetricsToOTel(ctx context.Context, m *PRMetrics, prCounts map[string]
 			attribute.Int64("iteration", int64(m.ReviewIterations)),
 		}
 
-		prReviewLoad.Add(ctx, 1, metric.WithAttributes(reviewerattrs...))
+		prReviewLoad.Add(ctx, weight, metric.WithAttributes(reviewerattrs...))
 	}
 
 	// Emit contributor load — counts PRs created per author

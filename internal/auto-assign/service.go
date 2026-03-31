@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/v61/github"
 )
@@ -37,12 +39,18 @@ type PREvent struct {
 	} `json:"pull_request"`
 }
 
+type Candidate struct {
+	Login         string
+	Workload      int
+	RecentReviews int
+	Score         float64
+}
+
 // =====================
 // LOAD EVENT
 // =====================
 func LoadPREvent() (*PREvent, error) {
 	path := os.Getenv("GITHUB_EVENT_PATH")
-
 	if path == "" {
 		return nil, fmt.Errorf("GITHUB_EVENT_PATH not set")
 	}
@@ -61,14 +69,42 @@ func LoadPREvent() (*PREvent, error) {
 }
 
 // =====================
+// HELPERS
+// =====================
+func getOrDefault(m map[string]int, key string, fallback int) int {
+	if v, ok := m[key]; ok {
+		return v
+	}
+	return fallback
+}
+
+func normalize(value, max int) float64 {
+	if max == 0 {
+		return 0
+	}
+	return float64(value) / float64(max)
+}
+
+// =====================
+// SCORING
+// =====================
+func CalculateScore(workload, recent, maxWorkload, maxRecent int) float64 {
+	wNorm := normalize(workload, maxWorkload)
+	rNorm := normalize(recent, maxRecent)
+
+	const workloadWeight = 0.7
+	const recentWeight = 0.3
+
+	score := (1-wNorm)*workloadWeight + (1-rNorm)*recentWeight
+	return score
+}
+
+// =====================
 // MAIN HANDLER
 // =====================
 func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 	fmt.Println("=== AUTO ASSIGN START ===")
 
-	// =====================
-	// VALIDATION
-	// =====================
 	if s.Github == nil {
 		return fmt.Errorf("github client is nil")
 	}
@@ -76,9 +112,6 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 		return fmt.Errorf("metrics provider is nil")
 	}
 
-	// =====================
-	// LOAD EVENT
-	// =====================
 	event, err := LoadPREvent()
 	if err != nil {
 		return err
@@ -98,16 +131,13 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 	fmt.Printf("PR: %d | Author: %s\n", prNumber, prAuthor)
 
 	// =====================
-	// GET COLLABORATORS
+	// FETCH DATA
 	// =====================
 	collaborators, _, err := s.Github.Repositories.ListCollaborators(ctx, owner, repo, nil)
 	if err != nil {
 		return fmt.Errorf("failed get collaborators: %w", err)
 	}
 
-	// =====================
-	// GET PR DATA
-	// =====================
 	pr, _, err := s.Github.PullRequests.Get(ctx, owner, repo, prNumber)
 	if err != nil {
 		return fmt.Errorf("failed get PR: %w", err)
@@ -116,6 +146,41 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 	existing := map[string]bool{}
 	for _, r := range pr.RequestedReviewers {
 		existing[r.GetLogin()] = true
+	}
+
+	// =====================
+	// FETCH METRICS
+	// =====================
+	workloads, err := s.Metrics.GetReviewWorkload(ctx)
+	if err != nil {
+		fmt.Printf("[WARN] workload fetch failed: %v\n", err)
+		workloads = map[string]int{}
+	}
+
+	recents, err := s.Metrics.GetRecentReviewCount(ctx)
+	if err != nil {
+		fmt.Printf("[WARN] recent fetch failed: %v\n", err)
+		recents = map[string]int{}
+	}
+
+	fmt.Printf("[METRICS] workloads=%v\n", workloads)
+	fmt.Printf("[METRICS] recents=%v\n", recents)
+
+	// =====================
+	// MAX VALUES
+	// =====================
+	maxWorkload := 1
+	for _, v := range workloads {
+		if v > maxWorkload {
+			maxWorkload = v
+		}
+	}
+
+	maxRecent := 1
+	for _, v := range recents {
+		if v > maxRecent {
+			maxRecent = v
+		}
 	}
 
 	// =====================
@@ -128,54 +193,47 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 
 		if login == "" ||
 			login == prAuthor ||
-			strings.Contains(login, "bot") ||
+			strings.Contains(strings.ToLower(login), "bot") ||
 			existing[login] {
 			continue
 		}
 
-		openPR, err := s.Metrics.GetOpenPRCount(ctx, owner, login)
-		if err != nil {
-			fmt.Printf("[WARN] openPR failed user=%s err=%v\n", login, err)
-			continue
-		}
+		workload := getOrDefault(workloads, login, maxWorkload)
+		recent := getOrDefault(recents, login, 0)
 
-		recent, err := s.Metrics.GetRecentReviewCount(ctx, owner, login)
-		if err != nil {
-			fmt.Printf("[WARN] recentReview failed user=%s err=%v\n", login, err)
-			recent = 0 // fallback OK
-		}
+		score := CalculateScore(workload, recent, maxWorkload, maxRecent)
 
-		score := CalculateScore(openPR, recent)
-
-		fmt.Printf("[CANDIDATE] user=%s openPR=%d recent=%d score=%d\n",
-			login, openPR, recent, score)
+		fmt.Printf("[CANDIDATE] %s → workload=%d recent=%d score=%.4f\n",
+			login, workload, recent, score)
 
 		candidates = append(candidates, Candidate{
 			Login:         login,
-			OpenPRCount:   openPR,
+			Workload:      workload,
 			RecentReviews: recent,
 			Score:         score,
 		})
 	}
 
-	// =====================
-	// EDGE CASE
-	// =====================
 	if len(candidates) == 0 {
 		fmt.Println("[INFO] No candidates available")
 		return nil
 	}
 
 	// =====================
-	// SORT
+	// SORT + FAIRNESS
 	// =====================
+	rand.Seed(time.Now().UnixNano())
+
 	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].Score == candidates[j].Score {
+			return rand.Intn(2) == 0
+		}
 		return candidates[i].Score > candidates[j].Score
 	})
 
 	fmt.Println("=== RANKING ===")
 	for i, c := range candidates {
-		fmt.Printf("%d. %s (score=%d)\n", i+1, c.Login, c.Score)
+		fmt.Printf("%d. %s (score=%.4f)\n", i+1, c.Login, c.Score)
 	}
 
 	// =====================
@@ -186,24 +244,18 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 		topN = len(candidates)
 	}
 
-	var reviewers []string
+	selected := make([]string, 0, topN)
 	for i := 0; i < topN; i++ {
-		reviewers = append(reviewers, candidates[i].Login)
+		selected = append(selected, candidates[i].Login)
 	}
 
-	fmt.Println("=== FINAL RANKING ===")
-	for i, c := range candidates {
-		fmt.Printf("%d. %s (openPR=%d score=%d)\n",
-			i+1, c.Login, c.OpenPRCount, c.Score)
-	}
-
-	fmt.Println("[SELECTED]", reviewers)
+	fmt.Println("[SELECTED]", selected)
 
 	// =====================
-	// ASSIGN REVIEWER
+	// ASSIGN REVIEWERS
 	// =====================
 	req := github.ReviewersRequest{
-		Reviewers: reviewers,
+		Reviewers: selected,
 	}
 
 	_, _, err = s.Github.PullRequests.RequestReviewers(
@@ -216,10 +268,10 @@ func (s *AutoAssignService) HandlePREvent(ctx context.Context) error {
 
 	if err != nil {
 		fmt.Printf("[ERROR] assign reviewer failed: %v\n", err)
-		return nil // jangan fail workflow
+		return nil // non-blocking
 	}
 
-	fmt.Println("[ASSIGNED]", reviewers)
+	fmt.Println("[ASSIGNED]", selected)
 
 	return nil
 }

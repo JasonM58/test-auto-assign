@@ -2,9 +2,14 @@ package config
 
 type (
 	Config struct {
-		Github    Github    `yaml:"github"`
-		Lark      Lark      `yaml:"lark"`
-		Telemetry Telemetry `yaml:"telemetry"`
+		Github     Github     `yaml:"github"`
+		Lark       Lark       `yaml:"lark"`
+		Telemetry  Telemetry  `yaml:"telemetry"`
+		Prometheus Prometheus `yaml:"prometheus"`
+	}
+
+	Prometheus struct {
+		BaseURL string `yaml:"base_url"`
 	}
 
 	Github struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"sort"
 	"time"
 
@@ -21,68 +22,90 @@ func Run(ctx context.Context, cfg *config.Loader, mode string) {
 
 	client := internalgithub.SetupClient(ctx, cfg)
 
-	metrics := &internalautoassign.GitHubMetrics{
-		Client: client,
+	metricsProvider := &internalautoassign.PrometheusMetrics{
+		BaseURL: cfg.GetPrometheusURL(),
+		Client:  &http.Client{},
 	}
 
 	org := "ionextai"
 
 	// =========================
-	// MODE: METRICS ONLY (LOCAL TEST)
+	// MODE: METRICS ONLY (DEBUG)
 	// =========================
 	if mode == "metrics" {
 		fmt.Println("=== METRICS MODE ===")
 
-		collaborators, _, err := client.Repositories.ListCollaborators(ctx, org, "repo-name", nil)
+		workloads, err := metricsProvider.GetReviewWorkload(ctx)
 		if err != nil {
-			log.Printf("failed get collaborators: %v", err)
-			return
+			fmt.Printf("❌ workload fetch failed: %v\n", err)
+			workloads = map[string]int{}
 		}
 
-		for _, c := range collaborators {
-			user := c.GetLogin()
+		recents, err := metricsProvider.GetRecentReviewCount(ctx)
+		if err != nil {
+			fmt.Printf("❌ recent fetch failed: %v\n", err)
+			recents = map[string]int{}
+		}
 
-			if user == "" {
-				continue
+		// compute max values
+		maxWorkload := 1
+		for _, v := range workloads {
+			if v > maxWorkload {
+				maxWorkload = v
 			}
+		}
 
-			openPR, err := metrics.GetOpenPRCount(ctx, org, user)
-			if err != nil {
-				fmt.Printf("❌ %s error: %v\n", user, err)
-				continue
+		maxRecent := 1
+		for _, v := range recents {
+			if v > maxRecent {
+				maxRecent = v
 			}
+		}
 
-			score := internalautoassign.CalculateScore(openPR, 0)
+		// print all reviewer metrics
+		seen := map[string]bool{}
+		for user := range workloads {
+			seen[user] = true
+		}
+		for user := range recents {
+			seen[user] = true
+		}
 
-			fmt.Printf("User=%s OpenPR=%d Score=%d\n", user, openPR, score)
+		for user := range seen {
+			w := workloads[user]
+			r := recents[user]
+			score := internalautoassign.CalculateScore(w, r, maxWorkload, maxRecent)
+			fmt.Printf("User=%s Workload=%d Recent=%d Score=%.4f\n", user, w, r, score)
 		}
 
 		return
 	}
 
 	// =========================
-	// MODE: AUTO ASSIGN (DEFAULT)
+	// AUTO ASSIGN
 	// =========================
 	fmt.Println("=== AUTO ASSIGN MODE ===")
 
 	autoAssignService := internalautoassign.AutoAssignService{
 		Github:  client,
-		Metrics: metrics,
+		Metrics: metricsProvider,
 	}
 
-	err := autoAssignService.HandlePREvent(ctx)
-	if err != nil {
+	if err := autoAssignService.HandlePREvent(ctx); err != nil {
 		log.Printf("Auto assign failed: %v", err)
 	}
 
 	// =========================
-	// TELEMETRY + NOTIFICATION
+	// TELEMETRY SETUP
 	// =========================
 	shutdown := internaltelemetry.Setup(ctx, cfg)
 	defer shutdown(ctx)
 
 	notifier := internallark.NewNotifier(cfg, client)
 
+	// =========================
+	// FETCH PR
+	// =========================
 	loc, _ := time.LoadLocation(locationName)
 	today := time.Now().In(loc).Truncate(24 * time.Hour)
 	tomorrow := today.Add(24 * time.Hour)
@@ -101,14 +124,55 @@ func Run(ctx context.Context, cfg *config.Loader, mode string) {
 		return prs[i].CreatedAt.After(prs[j].CreatedAt)
 	})
 
+	// =========================
+	// PROCESS PR
+	// =========================
 	for _, pr := range prs {
 
+		metrics, err := githubclient.GetPRMetrics(
+			ctx,
+			client,
+			pr.Repo.Owner,
+			pr.Repo.Name,
+			pr.RawPR,
+		)
+		if err != nil {
+			log.Printf("❌ Failed metrics PR #%d: %v", pr.Number, err)
+			continue
+		}
+
+		// -------------------------
+		// BASE METRICS (ALL PR)
+		// -------------------------
+		if err := githubclient.SendBasePRMetrics(ctx, metrics, prCounts); err != nil {
+			log.Printf("❌ Failed base metrics PR #%d: %v", pr.Number, err)
+		}
+
 		if pr.IsOpen {
+
+			// -------------------------
+			// OPEN PR → WORKLOAD
+			// -------------------------
 			notifier.NotifyOpenPR(ctx, pr)
-			internalgithub.SendMetrics(ctx, client, pr, prCounts)
+
+			if err := githubclient.SendWorkloadMetrics(ctx, metrics); err != nil {
+				log.Printf("❌ Failed workload PR #%d: %v", pr.Number, err)
+			}
+
 		} else {
+
+			// -------------------------
+			// MERGED PR ONLY
+			// -------------------------
+			if pr.RawPR.GetMergedAt().IsZero() {
+				continue // skip closed but not merged
+			}
+
 			notifier.NotifyMergedPR(ctx, pr)
-			internalgithub.SendMetrics(ctx, client, pr, prCounts)
+
+			if err := githubclient.SendHistoricalMetrics(ctx, metrics); err != nil {
+				log.Printf("❌ Failed historical PR #%d: %v", pr.Number, err)
+			}
 		}
 	}
 }

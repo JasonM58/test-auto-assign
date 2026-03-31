@@ -128,3 +128,12 @@ func (l *Loader) GetTelemetryMetricExportInterval() int {
 	}
 	return val
 }
+
+// --- PROMETHEUS CONFIG ---
+func (l *Loader) GetPrometheusURL() string {
+	u := l.fileLoad().Prometheus.BaseURL
+	if u == "" {
+		return ""
+	}
+	return u
+}
